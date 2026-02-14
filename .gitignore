@@ -1,0 +1,39 @@
+# 依赖目录
+node_modules/
+
+# 日志文件
+logs/*.log
+
+# 环境变量文件
+.env
+
+# 编辑器配置
+.vscode/
+.idea/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 构建输出
+dist/
+build/
+
+# 临时文件
+*.tmp
+*.temp
+
+# npm调试日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript编译输出
+*.tsbuildinfo
+
+# Coverage目录
+coverage/
+.nyc_output/
+
+# Jest测试结果
+jest-results.json
