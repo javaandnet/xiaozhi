@@ -74,6 +74,8 @@ class WebSocketProtocol {
       ws.sessionId = session_id;
     }
 
+    logger.debug(`处理消息类型: ${type}`);
+
     // 根据消息类型处理
     switch (type) {
       case 'hello':
@@ -91,7 +93,39 @@ class WebSocketProtocol {
       case 'chat':
         this.handleChat(ws, payload);
         break;
+      case 'start_recognition':
+        logger.info(`处理开始识别请求 [${ws.clientId}]`);
+        this.sendToClient(ws, {
+          type: 'recognition_started',
+          sessionId: ws.sessionId,
+          message: '语音识别已启动，可以说话了'
+        });
+        break;
+      case 'audio_data':
+        logger.info(`处理音频数据 [${ws.clientId}]: ${payload.audioData?.length || 0} bytes`);
+        // 这里应该调用STT服务处理音频
+        this.sendToClient(ws, {
+          type: 'recognition_result',
+          result: {
+            text: '模拟识别结果',
+            confidence: 0.9,
+            isWakeWord: false
+          },
+          sessionId: ws.sessionId
+        });
+        break;
+      case 'wake_word_detected':
+        logger.info(`处理唤醒词检测通知 [${ws.clientId}]: ${payload.keyword}`);
+        this.sendToClient(ws, {
+          type: 'wake_word_acknowledged',
+          keyword: payload.keyword,
+          confidence: payload.confidence,
+          timestamp: payload.timestamp,
+          message: '已检测到唤醒词，请说话'
+        });
+        break;
       default:
+        logger.warn(`未知消息类型: ${type}`);
         this.sendError(ws, `未知消息类型: ${type}`, session_id);
     }
   }

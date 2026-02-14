@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket调试测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        .container { background: white; padding: 20px; border-radius: 10px; max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; text-align: center; font-weight: bold; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        textarea { width: 100%; height: 100px; margin: 10px 0; }
+        .log { height: 300px; overflow-y: auto; background: #000; color: #00ff00; padding: 10px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📡 WebSocket调试测试</h1>
+        
+        <div>
+            <label>服务器地址:</label>
+            <input type="text" id="serverUrl" value="ws://localhost:8000" style="width: 300px; padding: 5px;">
+            <button onclick="connect()">连接</button>
+            <button onclick="disconnect()">断开</button>
+        </div>
+        
+        <div id="status" class="status disconnected">未连接</div>
+        
+        <div>
+            <h3>快速测试:</h3>
+            <button onclick="sendHello()">Hello握手</button>
+            <button onclick="sendIotDescriptors()">设备描述符</button>
+            <button onclick="sendIotStates()">设备状态</button>
+            <button onclick="sendChat()">聊天消息</button>
+        </div>
+        
+        <div>
+            <h3>自定义消息:</h3>
+            <textarea id="customMessage" placeholder="输入JSON消息"></textarea>
+            <button onclick="sendCustom()">发送</button>
+        </div>
+        
+        <div>
+            <h3>消息日志:</h3>
+            <div id="log" class="log"></div>
+            <button onclick="clearLog()">清空日志</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let isConnected = false;
+
+        function log(msg) {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `[${time}] ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function updateStatus(text, className) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = text;
+            statusEl.className = `status ${className}`;
+        }
+
+        function connect() {
+            const url = document.getElementById('serverUrl').value;
+            log(`正在连接到: ${url}`);
+            
+            ws = new WebSocket(url);
+            
+            ws.onopen = function() {
+                isConnected = true;
+                updateStatus('已连接', 'connected');
+                log('✅ 连接成功');
+            };
+            
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    log(`📥 接收: ${JSON.stringify(data, null, 2)}`);
+                } catch {
+                    log(`📥 接收二进制数据: ${event.data.length} 字节`);
+                }
+            };
+            
+            ws.onclose = function() {
+                isConnected = false;
+                updateStatus('连接已断开', 'disconnected');
+                log('❌ 连接关闭');
+            };
+            
+            ws.onerror = function(error) {
+                log(`❌ 连接错误: ${error}`);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            isConnected = false;
+            updateStatus('未连接', 'disconnected');
+            log('手动断开连接');
+        }
+
+        function sendMessage(obj) {
+            if (!isConnected || !ws) {
+                log('⚠️ 请先连接服务器');
+                return;
+            }
+            
+            const msg = JSON.stringify(obj);
+            ws.send(msg);
+            log(`📤 发送: ${msg}`);
+        }
+
+        // 测试消息
+        function sendHello() {
+            sendMessage({
+                type: 'hello',
+                version: 1,
+                transport: 'websocket',
+                audio_params: {
+                    format: 'opus',
+                    sample_rate: 16000,
+                    channels: 1,
+                    frame_duration: 60
+                }
+            });
+        }
+
+        function sendIotDescriptors() {
+            sendMessage({
+                type: 'iot',
+                descriptors: {
+                    device_id: 'web_test_' + Date.now(),
+                    name: '网页测试客户端',
+                    capabilities: {
+                        sensors: ['temperature', 'humidity'],
+                        actuators: ['led']
+                    }
+                }
+            });
+        }
+
+        function sendIotStates() {
+            sendMessage({
+                type: 'iot',
+                states: {
+                    temperature: (20 + Math.random() * 15).toFixed(1),
+                    humidity: (40 + Math.random() * 40).toFixed(1),
+                    led: Math.random() > 0.5 ? 'on' : 'off'
+                }
+            });
+        }
+
+        function sendChat() {
+            sendMessage({
+                type: 'chat',
+                text: 'Hello from web client!',
+                state: 'complete'
+            });
+        }
+
+        function sendCustom() {
+            const msgText = document.getElementById('customMessage').value;
+            try {
+                const obj = JSON.parse(msgText);
+                sendMessage(obj);
+            } catch (e) {
+                log(`❌ JSON解析错误: ${e.message}`);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            log('WebSocket调试工具已就绪');
+        });
+    </script>
+</body>
+</html>

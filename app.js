@@ -22,6 +22,7 @@ class XiaoZhiServer {
     // 初始化服务
     this.ttsService = new core.services.Tts(core.config.services.tts);
     this.sttService = new core.services.Stt(core.config.services.stt);
+    this.wakeWordService = new core.services.WakeWord(core.config.services.wakeword);
     
     this.websocketHandler = new core.handlers.WebSocket({
       wss: this.wss,
@@ -29,7 +30,8 @@ class XiaoZhiServer {
       sessionManager: this.sessionManager,
       audioManager: this.audioManager,
       ttsService: this.ttsService,
-      sttService: this.sttService
+      sttService: this.sttService,
+      wakeWordService: this.wakeWordService
     });
   }
 
@@ -125,11 +127,30 @@ class XiaoZhiServer {
     try {
       await this.ttsService.initialize();
       await this.sttService.initialize();
+      await this.wakeWordService.initialize();
+      
+      // 设置唤醒词检测回调
+      this.setupWakeWordCallbacks();
+      
       logger.info('服务初始化完成');
     } catch (error) {
       logger.error('服务初始化失败:', error);
       throw error;
     }
+  }
+
+  setupWakeWordCallbacks() {
+    // 设置唤醒词检测回调
+    this.wakeWordService.setWakeWordCallback((result) => {
+      console.log(`唤醒词检测回调触发: ${result.keyword}, 置信度: ${result.confidence}`);
+      // 这里可以触发全局事件或通知其他服务
+    });
+    
+    // 在STT服务中也设置唤醒词回调
+    this.sttService.setWakeWordCallback((result) => {
+      console.log(`STT服务唤醒词回调: ${result.keyword}`);
+      // 可以在这里处理唤醒词触发的业务逻辑
+    });
   }
 
   setupWebSocket() {
@@ -172,6 +193,7 @@ class XiaoZhiServer {
         // 销毁服务
         await this.ttsService.destroy();
         await this.sttService.destroy();
+        await this.wakeWordService.destroy();
         
         // 关闭HTTP服务器
         this.server.close(() => {
@@ -196,7 +218,8 @@ class XiaoZhiServer {
       audio: this.audioManager.getStats(),
       services: {
         tts: this.ttsService.isEnabled(),
-        stt: this.sttService.isEnabled()
+        stt: this.sttService.isEnabled(),
+        wakeWord: this.wakeWordService.isEnabled()
       }
     };
   }

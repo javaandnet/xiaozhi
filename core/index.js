@@ -14,6 +14,7 @@ const MqttProtocol = require('./protocols/mqtt');
 const AudioService = require('./services/audio');
 const TtsService = require('./services/tts');
 const SttService = require('./services/stt');
+const WakeWordService = require('./services/wakeword');
 const LlmService = require('./services/llm');
 const VadService = require('./services/vad');
 const VoiceprintService = require('./services/voiceprint');
@@ -60,6 +61,7 @@ module.exports = {
     Audio: AudioService,
     Tts: TtsService,
     Stt: SttService,
+    WakeWord: WakeWordService,
     Llm: LlmService,
     Vad: VadService,
     Voiceprint: VoiceprintService,

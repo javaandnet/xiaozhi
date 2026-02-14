@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简易WebSocket测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .connecting { background: #fff3cd; color: #856404; }
+        input, button, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .log {
+            height: 300px;
+            overflow-y: auto;
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px;
+        }
+        .send { color: #faf089; }
+        .receive { color: #90cdf4; }
+        .info { color: #63b3ed; }
+        .success { color: #68d391; }
+        .error { color: #fc8181; }
+        .quick-btn {
+            width: auto;
+            display: inline-block;
+            margin: 5px;
+            padding: 8px 15px;
+            font-size: 12px;
+        }
+        .quick-buttons {
+            text-align: center;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚡ 简易WebSocket测试工具</h1>
+        
+        <div>
+            <label>服务器地址:</label>
+            <input type="text" id="serverUrl" value="ws://localhost:8000" placeholder="WebSocket服务器地址">
+        </div>
+        
+        <div id="status" class="status disconnected">未连接</div>
+        
+        <button id="connectBtn" onclick="toggleConnection()">连接服务器</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>断开连接</button>
+        
+        <div class="quick-buttons">
+            <button class="quick-btn" onclick="sendHello()">发送Hello</button>
+            <button class="quick-btn" onclick="sendDeviceInfo()">设备信息</button>
+            <button class="quick-btn" onclick="sendSensorData()">传感器数据</button>
+            <button class="quick-btn" onclick="sendChat()">聊天消息</button>
+        </div>
+        
+        <div>
+            <label>自定义消息:</label>
+            <textarea id="customMessage" rows="4" placeholder='{"type": "your_type", "data": "your_data"}'></textarea>
+            <button onclick="sendCustomMessage()">发送自定义消息</button>
+        </div>
+        
+        <button onclick="clearLog()">清空日志</button>
+        
+        <div class="log" id="messageLog"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let isConnected = false;
+
+        function updateStatus(status, text) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = text;
+        }
+
+        function updateButtons() {
+            document.getElementById('connectBtn').disabled = isConnected;
+            document.getElementById('disconnectBtn').disabled = !isConnected;
+        }
+
+        function log(type, message) {
+            const logEl = document.getElementById('messageLog');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${time}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function toggleConnection() {
+            if (isConnected) {
+                disconnect();
+            } else {
+                connect();
+            }
+        }
+
+        function connect() {
+            const url = document.getElementById('serverUrl').value;
+            if (!url) {
+                alert('请输入服务器地址');
+                return;
+            }
+
+            updateStatus('connecting', '正在连接...');
+            log('info', `连接到: ${url}`);
+
+            try {
+                ws = new WebSocket(url);
+
+                ws.onopen = function() {
+                    isConnected = true;
+                    updateStatus('connected', '已连接');
+                    log('success', 'WebSocket连接成功');
+                    updateButtons();
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log('receive', `← ${JSON.stringify(data)}`);
+                    } catch {
+                        log('receive', `← [二进制数据: ${event.data.length}字节]`);
+                    }
+                };
+
+                ws.onclose = function() {
+                    isConnected = false;
+                    updateStatus('disconnected', '连接已断开');
+                    log('info', '连接已关闭');
+                    updateButtons();
+                };
+
+                ws.onerror = function() {
+                    isConnected = false;
+                    updateStatus('disconnected', '连接错误');
+                    log('error', 'WebSocket连接错误');
+                    updateButtons();
+                };
+
+            } catch (error) {
+                updateStatus('disconnected', '连接失败');
+                log('error', `连接失败: ${error.message}`);
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            isConnected = false;
+            updateStatus('disconnected', '未连接');
+            log('info', '手动断开连接');
+            updateButtons();
+        }
+
+        function sendMessage(message) {
+            if (!isConnected || !ws) {
+                alert('请先连接服务器');
+                return;
+            }
+
+            try {
+                ws.send(JSON.stringify(message));
+                log('send', `→ ${JSON.stringify(message)}`);
+            } catch (error) {
+                log('error', `发送失败: ${error.message}`);
+            }
+        }
+
+        // 预定义消息函数
+        function sendHello() {
+            sendMessage({
+                type: 'hello',
+                version: 1,
+                transport: 'websocket',
+                audio_params: {
+                    format: 'opus',
+                    sample_rate: 16000,
+                    channels: 1,
+                    frame_duration: 60
+                }
+            });
+        }
+
+        function sendDeviceInfo() {
+            sendMessage({
+                type: 'iot',
+                descriptors: {
+                    device_id: 'test_device_' + Date.now(),
+                    name: '测试设备',
+                    capabilities: {
+                        sensors: ['temperature', 'humidity'],
+                        actuators: ['led']
+                    }
+                }
+            });
+        }
+
+        function sendSensorData() {
+            sendMessage({
+                type: 'iot',
+                states: {
+                    temperature: (20 + Math.random() * 15).toFixed(1),
+                    humidity: (40 + Math.random() * 40).toFixed(1),
+                    led: Math.random() > 0.5 ? 'on' : 'off'
+                }
+            });
+        }
+
+        function sendChat() {
+            sendMessage({
+                type: 'chat',
+                text: '这是一条测试消息',
+                state: 'complete'
+            });
+        }
+
+        function sendCustomMessage() {
+            const messageText = document.getElementById('customMessage').value.trim();
+            if (!messageText) {
+                alert('请输入消息内容');
+                return;
+            }
+
+            try {
+                const message = JSON.parse(messageText);
+                sendMessage(message);
+            } catch (error) {
+                alert('JSON格式错误: ' + error.message);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('messageLog').innerHTML = '';
+            log('info', '日志已清空');
+        }
+
+        // 页面加载完成后的初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            log('info', 'WebSocket测试工具已就绪');
+        });
+    </script>
+</body>
+</html>

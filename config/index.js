@@ -79,6 +79,15 @@ module.exports = {
       threshold: 0.5,
       minSpeechDuration: 300,
       maxSpeechDuration: 30000
+    },
+    
+    // 唤醒词检测配置
+    wakeword: {
+      keywords: ['小智', '你好小智', 'Hey XiaoZhi'],
+      sensitivity: 0.7,
+      minConfidence: 0.6,
+      language: 'zh-CN',
+      enable: true
     }
   }
 };

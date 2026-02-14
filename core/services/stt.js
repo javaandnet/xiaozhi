@@ -6,6 +6,9 @@ class SttService extends BaseService {
     this.provider = config.provider || 'funasr';
     this.language = config.language || 'zh-CN';
     this.sampleRate = config.sampleRate || 16000;
+    this.enableWakeWordDetection = config.enableWakeWordDetection || false;
+    this.wakeWords = config.wakeWords || ['小智', '你好小智'];
+    this.wakeWordCallback = null;
   }
 
   async _initialize() {
@@ -48,8 +51,32 @@ class SttService extends BaseService {
     const opts = {
       language: options.language || this.language,
       sampleRate: options.sampleRate || this.sampleRate,
+      enableWakeWordDetection: options.enableWakeWordDetection || this.enableWakeWordDetection,
       ...options
     };
+
+    // 如果启用了唤醒词检测，先进行唤醒词检测
+    if (opts.enableWakeWordDetection) {
+      const wakeWordResult = await this._detectWakeWord(audioData, opts);
+      if (wakeWordResult.detected) {
+        console.log(`检测到唤醒词: ${wakeWordResult.keyword}, 置信度: ${wakeWordResult.confidence}`);
+        
+        // 触发唤醒词回调
+        if (this.wakeWordCallback) {
+          this.wakeWordCallback(wakeWordResult);
+        }
+        
+        // 可以在这里返回特殊的唤醒词响应
+        return {
+          text: `[WAKE_WORD_DETECTED] ${wakeWordResult.keyword}`,
+          confidence: wakeWordResult.confidence,
+          isWakeWord: true,
+          keyword: wakeWordResult.keyword,
+          timestamp: wakeWordResult.timestamp,
+          provider: 'wake_word_detection'
+        };
+      }
+    }
 
     try {
       let result;
@@ -111,6 +138,60 @@ class SttService extends BaseService {
       confidence: 0.90,
       duration: 3200
     };
+  }
+
+  /**
+   * 唤醒词检测
+   * @private
+   */
+  async _detectWakeWord(audioData, options) {
+    // 简单的文本匹配唤醒词检测（实际应用中应使用专业库）
+    const wakeWords = options.wakeWords || this.wakeWords;
+    const textContent = audioData.toString(); // 简化处理，实际应转语音为文本
+    
+    for (const wakeWord of wakeWords) {
+      if (textContent.includes(wakeWord)) {
+        return {
+          detected: true,
+          keyword: wakeWord,
+          confidence: 0.8 + Math.random() * 0.2, // 0.8-1.0
+          timestamp: Date.now()
+        };
+      }
+    }
+    
+    return {
+      detected: false,
+      keyword: null,
+      confidence: 0,
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * 设置唤醒词回调函数
+   * @param {Function} callback - 回调函数
+   */
+  setWakeWordCallback(callback) {
+    this.wakeWordCallback = callback;
+  }
+
+  /**
+   * 启用/禁用唤醒词检测
+   * @param {Boolean} enabled - 是否启用
+   */
+  setWakeWordDetection(enabled) {
+    this.enableWakeWordDetection = enabled;
+    console.log(`唤醒词检测已${enabled ? '启用' : '禁用'}`);
+  }
+
+  /**
+   * 设置唤醒词列表
+   * @param {Array} wakeWords - 唤醒词数组
+   */
+  setWakeWords(wakeWords) {
+    this.wakeWords = wakeWords;
+    console.log(`更新唤醒词列表: ${wakeWords.join(', ')}`);
   }
 
   async streamRecognize(stream, options = {}) {
