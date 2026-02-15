@@ -1,9 +1,10 @@
-const winston = require('winston');
-const path = require('path');
-require('dotenv').config();
+import winston from 'winston';
+import path from 'path';
+import dotenv from 'dotenv';
+dotenv.config();
 
 // 确保日志目录存在
-const fs = require('fs');
+import fs from 'fs';
 const logDir = './logs';
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
@@ -64,4 +65,4 @@ if (process.env.NODE_ENV !== 'production') {
   }));
 }
 
-module.exports = { logger };
+export { logger };

@@ -1,7 +1,7 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { webSocketHandler } = require('../websocket/handler');
-const { logger } = require('../utils/logger');
+import { webSocketHandler } from '../websocket/handler.js';
+import { logger } from '../utils/logger.js';
 
 // 获取所有传感器数据
 router.get('/', (req, res) => {
@@ -197,7 +197,7 @@ router.get('/trends/:sensorType', (req, res) => {
     });
 
     // 按时间间隔分组计算平均值
-    const trends = this.calculateTrends(sensorData, interval);
+    const trends = calculateTrends(sensorData, interval);
 
     res.json({
       success: true,
@@ -266,4 +266,4 @@ function calculateTrends(data, interval) {
   return trends;
 }
 
-module.exports = router;
+export default router;

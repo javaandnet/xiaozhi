@@ -40,4 +40,4 @@ jest-results.json
 xiaozhi-server/*
 node_modules/
 public/**
-data/tts-output/**
+data/**

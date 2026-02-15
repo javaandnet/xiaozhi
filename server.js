@@ -1,19 +1,31 @@
-const express = require('express');
-const http = require('http');
-const WebSocket = require('ws');
-const cors = require('cors');
-require('dotenv').config();
+import express from 'express';
+import http from 'http';
+import { WebSocketServer } from 'ws';
+import cors from 'cors';
+import dotenv from 'dotenv';
+dotenv.config();
 
-const { handleWebSocketConnection } = require('./websocket/handler');
-const deviceRoutes = require('./routes/devices');
-const sensorRoutes = require('./routes/sensors');
-const { logger } = require('./utils/logger');
+import { handleWebSocketConnection } from './websocket/handler.js';
+import deviceRoutes from './routes/devices.js';
+import sensorRoutes from './routes/sensors.js';
+import { logger } from './utils/logger.js';
+import OTAHandler from './core/ota-handler.js';
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 8000;
+
+// 初始化OTA处理器
+const config = {
+  server: {
+    port: PORT,
+    http_port: PORT,
+    auth_key: process.env.AUTH_KEY || 'xiaozhi-auth-secret-key'
+  }
+};
+const otaHandler = new OTAHandler(config);
 
 // 中间件配置
 app.use(cors());
@@ -24,6 +36,22 @@ app.use(express.static('public'));
 // 路由配置
 app.use('/api/devices', deviceRoutes);
 app.use('/api/sensors', sensorRoutes);
+
+// OTA路由
+app.get('/xiaozhi/ota/', (req, res) => {
+  const result = otaHandler.handleGet();
+  res.json(result);
+});
+
+app.post('/xiaozhi/ota/', async (req, res) => {
+  try {
+    const result = await otaHandler.handlePost(req);
+    res.json(result);
+  } catch (error) {
+    logger.error('OTA POST处理失败:', error);
+    res.status(500).json({ success: false, message: 'request error' });
+  }
+});
 
 // 健康检查端点
 app.get('/health', (req, res) => {
@@ -43,6 +71,7 @@ app.get('/', (req, res) => {
       devices: '/api/devices',
       sensors: '/api/sensors',
       websocket: 'ws://localhost:' + PORT,
+      ota: '/xiaozhi/ota/',
       health: '/health'
     }
   });
@@ -74,6 +103,7 @@ app.use('*', (req, res) => {
 server.listen(PORT, () => {
   logger.info(`小智服务器启动成功，监听端口 ${PORT}`);
   logger.info(`WebSocket服务器运行在 ws://localhost:${PORT}`);
+  logger.info(`HTTP服务器运行在 http://localhost:${PORT}`);
 });
 
 // 优雅关闭
@@ -93,4 +123,4 @@ process.on('SIGINT', () => {
   });
 });
 
-module.exports = { app, server, wss };
+export { app, server, wss };

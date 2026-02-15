@@ -1,6 +1,6 @@
 const { logger } = require('../utils/logger');
 const BaseService = require('./services/base');
-const EdgeTTS = require('edge-tts-universal');
+const { EdgeTTS } = require('node-edge-tts');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -18,12 +18,12 @@ class TtsService extends BaseService {
     this.outputDir = this.ttsConfig.output_dir || path.join(os.tmpdir(), 'tts');
     this.audioFormat = this.ttsConfig.format || 'opus';
     this.sampleRate = this.ttsConfig.sample_rate || 24000;
-    
+
     // 确保输出目录存在
     if (!fs.existsSync(this.outputDir)) {
       fs.mkdirSync(this.outputDir, { recursive: true });
     }
-    
+
     // 标点符号配置
     this.punctuations = ['。', '？', '?', '！', '!', '；', ';', '：', '\n'];
     this.firstSentencePunctuations = ['，', '~', '、', ',', '。', '？', '?', '！', '!', '；', ';', '：'];
@@ -32,7 +32,7 @@ class TtsService extends BaseService {
   async _initialize() {
     // 初始化TTS服务
     logger.info(`初始化TTS服务，提供商: ${this.provider}, 语音: ${this.voice}`);
-    
+
     // 测试TTS连接
     await this._testConnection();
   }
@@ -82,9 +82,6 @@ class TtsService extends BaseService {
         case 'edge':
           audioData = await this._synthesizeWithEdge(text, opts);
           break;
-        case 'system':
-          audioData = await this._synthesizeWithSystem(text, opts);
-          break;
         case 'openai':
           audioData = await this._synthesizeWithOpenAI(text, opts);
           break;
@@ -108,29 +105,30 @@ class TtsService extends BaseService {
    */
   async _synthesizeWithEdge(text, options) {
     try {
-      const { Communicate } = require('edge-tts-universal');
-      
-      // 创建通信实例
-      const tts = new Communicate(text, { voice: options.voice });
-      
-      // 收集音频数据
-      const audioChunks = [];
-      for await (const chunk of tts.stream()) {
-        if (chunk.type === 'audio') {
-          audioChunks.push(chunk.data);
-        }
-      }
-      
-      // 合并音频数据
-      if (audioChunks.length > 0) {
-        return Buffer.concat(audioChunks);
-      } else {
-        throw new Error('未收到音频数据');
-      }
+      const { EdgeTTS } = require('node-edge-tts');
+
+      // 创建TTS实例
+      const tts = new EdgeTTS({
+        voice: options.voice || this.voice,
+        rate: options.rate ? `${options.rate}%` : '+0%',
+        volume: options.volume ? `${options.volume}%` : '+0%'
+      });
+
+      // 生成临时文件路径
+      const tempFilePath = path.join(this.outputDir, `temp-${Date.now()}.mp3`);
+
+      // 生成音频文件
+      await tts.ttsPromise(text, tempFilePath);
+
+      // 读取音频数据
+      const audioData = fs.readFileSync(tempFilePath);
+
+      // 清理临时文件
+      fs.unlinkSync(tempFilePath);
+
+      return audioData;
     } catch (error) {
-      logger.warn(`Edge TTS失败: ${error.message}，尝试系统TTS`);
-      // 回退到系统TTS
-      return await this._synthesizeWithSystem(text, options);
+      throw error;
     }
   }
 
@@ -141,37 +139,6 @@ class TtsService extends BaseService {
     // TODO: 实现OpenAI TTS
     logger.warn('OpenAI TTS暂未实现，使用Edge TTS');
     return this._synthesizeWithEdge(text, options);
-  }
-
-  /**
-   * 使用系统TTS合成语音（macOS/Linux）
-   */
-  async _synthesizeWithSystem(text, options) {
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
-    const execAsync = promisify(exec);
-    
-    try {
-      // 生成临时文件名
-      const tempFile = this.generateFilename('.aiff');
-      
-      // 使用系统say命令生成音频
-      const command = `say -v Ting-Ting "${text}" -o "${tempFile}"`;
-      await execAsync(command);
-      
-      // 读取生成的音频文件
-      const fs = require('fs');
-      const audioData = fs.readFileSync(tempFile);
-      
-      // 删除临时文件
-      fs.unlinkSync(tempFile);
-      
-      logger.info(`系统TTS生成成功: ${audioData.length} bytes`);
-      return audioData;
-    } catch (error) {
-      logger.error(`系统TTS失败: ${error.message}`);
-      throw new Error(`系统TTS生成失败: ${error.message}`);
-    }
   }
 
   /**
@@ -198,12 +165,12 @@ class TtsService extends BaseService {
 
     // 分段处理
     const segments = this._splitText(text);
-    
+
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const isFirst = i === 0;
       const isLast = i === segments.length - 1;
-      
+
       try {
         const audioData = await this.synthesize(segment);
         callback({
@@ -225,13 +192,13 @@ class TtsService extends BaseService {
    */
   _splitText(text) {
     if (!text) return [];
-    
+
     const segments = [];
     let currentSegment = '';
-    
+
     for (const char of text) {
       currentSegment += char;
-      
+
       if (this.punctuations.includes(char)) {
         if (currentSegment.trim()) {
           segments.push(currentSegment.trim());
@@ -239,12 +206,12 @@ class TtsService extends BaseService {
         currentSegment = '';
       }
     }
-    
+
     // 处理最后一段
     if (currentSegment.trim()) {
       segments.push(currentSegment.trim());
     }
-    
+
     return segments;
   }
 
@@ -255,7 +222,7 @@ class TtsService extends BaseService {
    */
   _cleanMarkdown(text) {
     if (!text) return '';
-    
+
     return text
       .replace(/#{1,6}\s/g, '')  // 移除标题标记
       .replace(/\*\*([^*]+)\*\*/g, '$1')  // 移除粗体
@@ -297,15 +264,19 @@ class TtsService extends BaseService {
    */
   async getAvailableVoices() {
     try {
-      const { listVoices } = require('edge-tts-universal');
-      const voices = await listVoices();
-      
-      return voices.map(v => ({
-        name: v.Name,
-        shortName: v.ShortName,
-        gender: v.Gender,
-        locale: v.Locale
-      }));
+      // node-edge-tts 库目前没有直接的语音列表API
+      // 返回预定义的常用语音列表
+      const commonVoices = [
+        { name: 'Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)', shortName: 'zh-CN-XiaoxiaoNeural', gender: 'Female', locale: 'zh-CN' },
+        { name: 'Microsoft Server Speech Text to Speech Voice (zh-CN, YunxiNeural)', shortName: 'zh-CN-YunxiNeural', gender: 'Male', locale: 'zh-CN' },
+        { name: 'Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoyiNeural)', shortName: 'zh-CN-XiaoyiNeural', gender: 'Female', locale: 'zh-CN' },
+        { name: 'Microsoft Server Speech Text to Speech Voice (zh-CN, YunyangNeural)', shortName: 'zh-CN-YunyangNeural', gender: 'Male', locale: 'zh-CN' },
+        { name: 'Microsoft Server Speech Text to Speech Voice (en-US, EmmaMultilingualNeural)', shortName: 'en-US-EmmaMultilingualNeural', gender: 'Female', locale: 'en-US' },
+        { name: 'Microsoft Server Speech Text to Speech Voice (en-US, AndrewMultilingualNeural)', shortName: 'en-US-AndrewMultilingualNeural', gender: 'Male', locale: 'en-US' }
+      ];
+
+      logger.info(`返回 ${commonVoices.length} 个常用语音`);
+      return commonVoices;
     } catch (error) {
       logger.error(`获取语音列表失败: ${error.message}`);
       return [];

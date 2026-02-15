@@ -1,7 +1,7 @@
-const { v4: uuidv4 } = require('uuid');
-const moment = require('moment');
-const { logger } = require('../utils/logger');
-const DeviceManager = require('../managers/deviceManager');
+import { v4 as uuidv4 } from 'uuid';
+import moment from 'moment';
+import { logger } from '../utils/logger.js';
+import DeviceManager from '../managers/deviceManager.js';
 
 class WebSocketHandler {
   constructor(wss) {
@@ -354,7 +354,4 @@ const handleWebSocketConnection = (ws, req, wss) => {
   handler.handleConnection(ws, req);
 };
 
-module.exports = {
-  handleWebSocketConnection,
-  webSocketHandler: handler
-};
+export { handleWebSocketConnection, handler as webSocketHandler };

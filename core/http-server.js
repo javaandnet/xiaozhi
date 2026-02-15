@@ -90,27 +90,6 @@ class HttpServer {
       res.status(200).end();
     });
 
-    // TTS测试端点
-    this.app.post('/api/tts', async (req, res) => {
-      try {
-        const { text } = req.body;
-        if (!text) {
-          return res.status(400).json({ error: '缺少text参数' });
-        }
-        
-        // 这里需要访问TTS服务，但在当前架构中无法直接访问
-        // 先返回模拟响应
-        res.json({
-          success: true,
-          message: 'TTS服务端点已注册，但需要通过WebSocket调用',
-          text: text
-        });
-      } catch (error) {
-        logger.error('TTS API调用失败:', error);
-        res.status(500).json({ error: error.message });
-      }
-    });
-
     // WebSocket服务器信息端点
     this.app.get('/websocket/info', (req, res) => {
       const serverConfig = this.config.server || {};

@@ -1,4 +1,4 @@
-const moment = require('moment');
+import moment from 'moment';
 
 class DeviceManager {
   constructor() {
@@ -222,4 +222,4 @@ class DeviceManager {
   }
 }
 
-module.exports = DeviceManager;
+export default DeviceManager;
