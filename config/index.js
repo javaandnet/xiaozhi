@@ -3,8 +3,8 @@
 module.exports = {
   // 服务器配置
   server: {
-    port: process.env.PORT || 8000,
-    http_port: process.env.HTTP_PORT || 8003,
+    port: process.env.PORT || 9999,
+    http_port: process.env.HTTP_PORT || 9999,
     host: process.env.HOST || '0.0.0.0',
     environment: process.env.NODE_ENV || 'development',
     auth_key: process.env.AUTH_KEY || 'xiaozhi-auth-secret-key',

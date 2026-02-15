@@ -4,9 +4,10 @@ const { AuthManager, AuthenticationError } = require('./auth');
 const { logger } = require('../utils/logger');
 
 class WebSocketServer {
-  constructor(config, llmService = null) {
+  constructor(config, llmService = null, ttsService = null) {
     this.config = config;
     this.llmService = llmService; // LLM服务
+    this.ttsService = ttsService; // TTS服务
     this.connections = new Map(); // 存储活跃连接
     this.authManager = null;
     this.setupAuth();
@@ -228,12 +229,11 @@ class WebSocketServer {
     }
 
     // 如果是detect状态（唤醒词检测），触发AI响应
-    // 注意：不在这里发送listen确认，避免前端重复显示
     if (state === 'detect') {
       const wakeWord = text || '你好';
       logger.info(`检测到唤醒词: ${wakeWord}`);
       
-      // 触发AI对话流程
+      // 触发AI对话流程（包含stt、llm、tts消息）
       this.triggerAIResponse(ws, wakeWord);
       return;
     }
@@ -258,8 +258,15 @@ class WebSocketServer {
       // 生成AI回复
       const replyText = await this.generateAIResponse(connectionId, wakeWord);
       
-      // 只发送LLM消息（大模型回复）- 包含识别结果和回复
-      // 不单独发送stt消息，避免前端重复显示
+      // 1. 发送STT消息（识别结果）
+      this.sendMessage(ws, {
+        type: 'stt',
+        session_id: sessionId,
+        text: wakeWord,
+        timestamp: new Date().toISOString()
+      });
+      
+      // 2. 发送LLM消息（大模型回复）
       this.sendMessage(ws, {
         type: 'llm',
         session_id: sessionId,
@@ -268,15 +275,15 @@ class WebSocketServer {
         timestamp: new Date().toISOString()
       });
 
-      // 开始TTS
+      // 3. 发送TTS开始
       this.sendMessage(ws, {
         type: 'tts',
         session_id: sessionId,
         state: 'start',
         timestamp: new Date().toISOString()
       });
-
-      // 句子开始（带文本，用于显示）
+      
+      // 4. 发送句子开始（带文本）
       this.sendMessage(ws, {
         type: 'tts',
         session_id: sessionId,
@@ -284,8 +291,29 @@ class WebSocketServer {
         text: replyText,
         timestamp: new Date().toISOString()
       });
-
-      // 模拟音频发送完成后停止TTS
+      
+      // 5. 生成并发送TTS音频
+      try {
+        if (this.ttsService) {
+          logger.info(`正在生成TTS语音: ${replyText}`);
+          const audioData = await this.ttsService.synthesize(replyText);
+          // 发送音频数据
+          ws.send(audioData);
+          logger.info(`TTS音频已发送: ${audioData.length} bytes`);
+        } else {
+          // 没有TTS服务，发送静音帧
+          const silentOpus = this.createSilentOpusFrame();
+          ws.send(silentOpus);
+        }
+      } catch (ttsError) {
+        logger.error(`TTS生成失败XXXXX: ${ttsError.message}`);
+        logger.error(`TTS生成失败: ${ttsError.message}`);
+        // TTS失败时发送静音帧
+        const silentOpus = this.createSilentOpusFrame();
+        ws.send(silentOpus);
+      }
+      
+      // 6. 发送TTS停止
       setTimeout(() => {
         this.sendMessage(ws, {
           type: 'tts',
@@ -293,11 +321,26 @@ class WebSocketServer {
           state: 'stop',
           timestamp: new Date().toISOString()
         });
-      }, replyText.length * 100);
+      }, 500);
 
     } catch (error) {
       logger.error(`触发AI响应失败: ${error.message}`);
     }
+  }
+
+  /**
+   * 创建静音Opus帧（用于模拟TTS）
+   */
+  createSilentOpusFrame() {
+    // Opus静音帧（基于OTEP格式）
+    // 简单实现：直接发送一个小的二进制数据
+    // 格式：type(1) + reserved(1) + size(2) + payload
+    const payload = Buffer.from([0x00, 0x00, 0x00, 0x00]); // 4字节的静音数据
+    const header = Buffer.alloc(4);
+    header[0] = 0x00; // type: OPUS
+    header[1] = 0x00; // reserved
+    header.writeUInt16BE(payload.length, 2); // payload size
+    return Buffer.concat([header, payload]);
   }
 
   handleAbort(ws, message) {

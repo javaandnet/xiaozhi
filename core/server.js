@@ -4,6 +4,7 @@ const { logger } = require('../utils/logger');
 const HttpServer = require('./http-server');
 const WebSocketServer = require('./websocket-server');
 const LLMService = require('./llm-service');
+const TTSService = require('./tts-service');
 
 class XiaoZhiServer {
   constructor(config) {
@@ -12,6 +13,7 @@ class XiaoZhiServer {
     this.websocketServer = null;
     this.wss = null; // WebSocket服务器实例
     this.llmService = null; // LLM服务
+    this.ttsService = null; // TTS服务
   }
 
   /**
@@ -29,11 +31,15 @@ class XiaoZhiServer {
         logger.warn('LLM API Key未配置，将使用模拟回复');
       }
       
+      // 创建TTS服务
+      this.ttsService = new TTSService(this.config);
+      logger.info(`TTS服务已配置: ${this.ttsService.voice}`);
+      
       // 创建HTTP服务器
       this.httpServer = new HttpServer(this.config);
       
-      // 创建WebSocket服务器（传入LLM服务）
-      this.websocketServer = new WebSocketServer(this.config, this.llmService);
+      // 创建WebSocket服务器（传入LLM和TTS服务）
+      this.websocketServer = new WebSocketServer(this.config, this.llmService, this.ttsService);
       
       logger.info('服务器初始化完成');
     } catch (error) {
