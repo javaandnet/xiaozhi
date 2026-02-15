@@ -19,7 +19,7 @@ class WebSocketHandler extends WebSocketProtocol {
   }
 
   handleMessage(ws, data) {
-    // 重写消息处理逻辑，处理我们自己的业务消息
+    // 直接处理所有消息类型，不依赖父类
     let message;
     try {
       message = JSON.parse(data.toString());
@@ -36,6 +36,8 @@ class WebSocketHandler extends WebSocketProtocol {
       ws.sessionId = sessionId;
     }
 
+    console.log(`处理消息类型: ${type}`);
+
     // 根据消息类型处理
     switch (type) {
       case 'hello':
@@ -43,20 +45,81 @@ class WebSocketHandler extends WebSocketProtocol {
       case 'abort':
       case 'iot':
       case 'chat':
-        // 调用父类处理原始协议消息
-        super.handleMessage(data);
+        // 处理原始协议消息
+        this.handleProtocolMessage(ws, type, payload);
         break;
       case 'start_recognition':
-        this.handleStartRecognition(ws, payload);
+        console.log(`处理开始识别请求 [${ws.clientId}]`);
+        this.sendMessage(ws, {
+          type: 'recognition_started',
+          sessionId: ws.sessionId,
+          message: '语音识别已启动，可以说话了'
+        });
         break;
       case 'audio_data':
+        console.log(`处理音频数据 [${ws.clientId}]: ${payload.audioData?.length || 0} bytes`);
+        // 调用STT服务处理音频
         this.handleAudioData(ws, payload);
         break;
       case 'wake_word_detected':
+        console.log(`处理唤醒词检测通知 [${ws.clientId}]: ${payload.keyword}`);
         this.handleWakeWordDetected(ws, payload);
         break;
       default:
+        console.warn(`未知消息类型: ${type}`);
         this.sendError(ws, `未知消息类型: ${type}`);
+    }
+  }
+
+  handleProtocolMessage(ws, type, payload) {
+    // 处理原始ESP32协议消息
+    switch (type) {
+      case 'hello':
+        const { version, transport, audio_params } = payload;
+        if (version !== 1 || transport !== 'websocket') {
+          this.sendError(ws, '不支持的协议版本或传输方式', ws.sessionId);
+          return;
+        }
+        ws.audioParams = audio_params;
+        ws.isAuthenticated = true;
+        this.sendMessage(ws, {
+          type: 'hello',
+          transport: 'websocket',
+          audio_params: {
+            format: 'opus',
+            sampleRate: 16000,
+            channels: 1,
+            frameDuration: 60
+          }
+        });
+        console.log(`设备握手成功: ${ws.clientId}`);
+        break;
+        
+      case 'listen':
+        const { state: listenState, mode, text: listenText } = payload;
+        if (!listenState) {
+          this.sendError(ws, '缺少监听状态', ws.sessionId);
+          return;
+        }
+        console.log(`监听状态更新 [${ws.clientId}]: ${listenState}`);
+        break;
+        
+      case 'abort':
+        const { reason } = payload;
+        console.log(`会话终止 [${ws.sessionId}]: ${reason || '未知原因'} (${ws.clientId})`);
+        break;
+        
+      case 'iot':
+        const { descriptors, states } = payload;
+        console.log(`收到IoT消息 [${ws.clientId}]: descriptors=${!!descriptors}, states=${!!states}`);
+        break;
+        
+      case 'chat':
+        const { text: chatText, state: chatState } = payload;
+        if (chatState === 'complete' && chatText) {
+          console.log(`收到聊天消息 [${ws.clientId}]: ${chatText}`);
+        }
+        break;
     }
   }
 

@@ -3,9 +3,20 @@
 module.exports = {
   // 服务器配置
   server: {
-    port: process.env.PORT || 3000,
-    host: process.env.HOST || 'localhost',
-    environment: process.env.NODE_ENV || 'development'
+    port: process.env.PORT || 8000,
+    http_port: process.env.HTTP_PORT || 8003,
+    host: process.env.HOST || '0.0.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    auth_key: process.env.AUTH_KEY || 'xiaozhi-auth-secret-key',
+    // MQTT网关配置（可选）
+    mqtt_gateway: process.env.MQTT_GATEWAY || '',
+    mqtt_signature_key: process.env.MQTT_SIGNATURE_KEY || '',
+    // 认证配置
+    auth: {
+      enabled: process.env.AUTH_ENABLED === 'true' || false,
+      expire_seconds: process.env.AUTH_EXPIRE_SECONDS || 2592000, // 30天
+      allowed_devices: process.env.ALLOWED_DEVICES ? process.env.ALLOWED_DEVICES.split(',') : []
+    }
   },
 
   // WebSocket配置
@@ -70,8 +81,12 @@ module.exports = {
     
     // LLM服务配置
     llm: {
-      provider: process.env.LLM_PROVIDER || 'glm',
-      model: process.env.LLM_MODEL || 'glm-4-flash'
+      provider: process.env.LLM_PROVIDER || 'glm', // openai, qwen, glm, deepseek
+      model: process.env.LLM_MODEL || 'glm-4-flash',
+      api_key: process.env.LLM_API_KEY || '60284c17c64043f290fab4b0ce20ec1c.2ocJCaVIXzpGbch3',
+      base_url: process.env.LLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
+      temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
+      max_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 500
     },
     
     // VAD配置
