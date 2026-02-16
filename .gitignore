@@ -39,5 +39,5 @@ coverage/
 jest-results.json
 xiaozhi-server/*
 node_modules/
-public/**
 data/**
+public/resources/**
