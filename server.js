@@ -5,11 +5,11 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 dotenv.config();
 
-import OTAHandler from './core/ota-handler.js';
+import { handleWebSocketConnection } from './core/handlers/websocket.js';
+import OTAHandler from './core/handlers/ota.js';
 import deviceRoutes from './routes/devices.js';
 import sensorRoutes from './routes/sensors.js';
 import { logger } from './utils/logger.js';
-import { handleWebSocketConnection } from './websocket/handler.js';
 
 // 导入服务
 import LLMService from './core/services/llm.js';
@@ -58,7 +58,7 @@ const ttsService = new TTSService(config);
   } catch (error) {
     console.error('❌ LLM服务初始化失败:', error.message);
   }
-  
+
   try {
     await ttsService.initialize();
     console.log('✅ TTS服务初始化成功');

@@ -1,6 +1,6 @@
 import express from 'express';
+import { webSocketHandler } from '../core/handlers/websocket.js';
 import { logger } from '../utils/logger.js';
-import { webSocketHandler } from '../websocket/handler.js';
 const router = express.Router();
 
 // 获取所有设备列表

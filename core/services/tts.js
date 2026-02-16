@@ -83,8 +83,13 @@ class TtsService extends BaseService {
           throw new Error(`不支持的TTS提供商: ${this.provider}`);
       }
 
-      // 直接返回音频数据Buffer，与WebSocket处理器期望的格式匹配
-      return audioData;
+      return {
+        audio: audioData,
+        format: 'opus',
+        sampleRate: 16000,
+        duration: this._estimateDuration(text),
+        provider: this.provider
+      };
     } catch (error) {
       console.error('TTS合成失败:', error);
       throw error;

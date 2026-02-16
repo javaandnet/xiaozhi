@@ -1,7 +1,7 @@
 import express from 'express';
-const router = express.Router();
-import { webSocketHandler } from '../websocket/handler.js';
+import { webSocketHandler } from '../core/handlers/websocket.js';
 import { logger } from '../utils/logger.js';
+const router = express.Router();
 
 // 获取所有传感器数据
 router.get('/', (req, res) => {

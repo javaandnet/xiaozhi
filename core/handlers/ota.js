@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { logger } from '../utils/logger.js';
+import { logger } from '../../utils/logger.js';
 
 class OTAHandler {
   constructor(config) {
