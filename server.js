@@ -21,19 +21,23 @@ const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 8000;
 
-// 初始化配置
+// 直接使用配置文件中的值，环境变量作为覆盖
 const config = {
   server: {
     port: PORT,
     http_port: PORT,
+    host: process.env.HOST || '0.0.0.0',
+    environment: process.env.NODE_ENV || 'development',
     auth_key: process.env.AUTH_KEY || 'xiaozhi-auth-secret-key'
   },
   services: {
     llm: {
       provider: process.env.LLM_PROVIDER || 'glm',
       model: process.env.LLM_MODEL || 'glm-4-flash',
-      api_key: process.env.LLM_API_KEY || '',
-      base_url: process.env.LLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4'
+      api_key: process.env.LLM_API_KEY || '60284c17c64043f290fab4b0ce20ec1c.2ocJCaVIXzpGbch3',
+      base_url: process.env.LLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
+      temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
+      max_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 500
     },
     tts: {
       provider: process.env.TTS_PROVIDER || 'edge',
@@ -45,6 +49,23 @@ const config = {
 // 初始化服务
 const llmService = new LLMService(config);
 const ttsService = new TTSService(config);
+
+// 初始化服务
+(async () => {
+  try {
+    await llmService.initialize();
+    console.log('✅ LLM服务初始化成功');
+  } catch (error) {
+    console.error('❌ LLM服务初始化失败:', error.message);
+  }
+  
+  try {
+    await ttsService.initialize();
+    console.log('✅ TTS服务初始化成功');
+  } catch (error) {
+    console.error('❌ TTS服务初始化失败:', error.message);
+  }
+})();
 
 // 初始化OTA处理器
 const otaHandler = new OTAHandler(config);

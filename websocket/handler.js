@@ -7,11 +7,11 @@ class WebSocketHandler {
     this.wss = wss;
     this.deviceManager = new DeviceManager();
     this.heartbeatInterval = null;
-    
+
     // 接受外部传入的服务
     this.llmService = options.llmService;
     this.ttsService = options.ttsService;
-    
+
     logger.info('WebSocket处理器初始化完成');
     if (this.llmService) {
       logger.info(`LLM服务: ${this.llmService.provider || '未配置'}`);
@@ -278,7 +278,7 @@ class WebSocketHandler {
 
     try {
       console.log(`开始处理聊天消息 [${clientId}]: ${text}`);
-      
+
       // 1. 发送处理开始状态
       this.sendToClient(ws, {
         type: 'processing',
@@ -290,7 +290,7 @@ class WebSocketHandler {
       // 2. 调用LLM生成回复
       console.log(`调用LLM服务生成回复...`);
       let llmResponse;
-      
+
       if (this.llmService && this.llmService.isConfigured()) {
         try {
           llmResponse = await this.llmService.chat(clientId, text);
@@ -329,7 +329,7 @@ class WebSocketHandler {
         try {
           const ttsResult = await this.ttsService.synthesize(llmResponse);
           console.log(`TTS合成成功: ${ttsResult.length} bytes`);
-          
+
           // 6. 发送TTS音频数据
           this.sendToClient(ws, {
             type: 'tts_audio',
@@ -341,7 +341,7 @@ class WebSocketHandler {
             duration: this.estimateAudioDuration(llmResponse),
             timestamp: new Date().toISOString()
           });
-          
+
         } catch (ttsError) {
           console.error(`TTS合成失败: ${ttsError.message}`);
           // TTS失败时发送文本作为备选
@@ -371,15 +371,15 @@ class WebSocketHandler {
         state: 'complete',
         timestamp: new Date().toISOString()
       });
-      
+
       console.log(`聊天消息处理完成 [${clientId}]`);
 
     } catch (error) {
       console.error(`处理聊天消息失败 [${clientId}]:`, error);
-      
+
       // 发送错误消息
       this.sendError(ws, `处理消息失败: ${error.message}`, sessionId);
-      
+
       // 发送处理结束状态
       this.sendToClient(ws, {
         type: 'processing',

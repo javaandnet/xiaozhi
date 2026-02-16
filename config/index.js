@@ -72,13 +72,13 @@ module.exports = {
       provider: process.env.TTS_PROVIDER || 'edge',
       voice: process.env.TTS_VOICE || 'zh-CN-XiaoxiaoNeural'
     },
-    
+
     // STT服务配置
     stt: {
       provider: process.env.STT_PROVIDER || 'funasr',
       language: process.env.STT_LANGUAGE || 'zh-CN'
     },
-    
+
     // LLM服务配置
     llm: {
       provider: process.env.LLM_PROVIDER || 'glm', // openai, qwen, glm, deepseek
@@ -88,14 +88,14 @@ module.exports = {
       temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
       max_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 500
     },
-    
+
     // VAD配置
     vad: {
       threshold: 0.5,
       minSpeechDuration: 300,
       maxSpeechDuration: 30000
     },
-    
+
     // 唤醒词检测配置
     wakeword: {
       keywords: ['小智', '你好小智', 'Hey XiaoZhi'],
