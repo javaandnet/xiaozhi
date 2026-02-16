@@ -1,7 +1,7 @@
 import express from 'express';
-const router = express.Router();
-import { webSocketHandler } from '../websocket/handler.js';
 import { logger } from '../utils/logger.js';
+import { webSocketHandler } from '../websocket/handler.js';
+const router = express.Router();
 
 // 获取所有设备列表
 router.get('/', (req, res) => {
@@ -39,7 +39,7 @@ router.get('/:clientId', (req, res) => {
   try {
     const { clientId } = req.params;
     const device = webSocketHandler.deviceManager.getDevice(clientId);
-    
+
     if (!device) {
       return res.status(404).json({
         success: false,
@@ -77,7 +77,7 @@ router.get('/by-device-id/:deviceId', (req, res) => {
   try {
     const { deviceId } = req.params;
     const device = webSocketHandler.deviceManager.getDeviceByDeviceId(deviceId);
-    
+
     if (!device) {
       return res.status(404).json({
         success: false,
@@ -125,7 +125,7 @@ router.post('/:clientId/command', async (req, res) => {
     // 注意：sendCommand方法在WebSocketHandler中可能不存在，需要实现
     const commandId = uuidv4(); // 临时实现
     logger.warn(`发送命令功能需要在WebSocketHandler中实现: ${command}`);
-    
+
     res.json({
       success: true,
       commandId,
@@ -144,7 +144,7 @@ router.post('/:clientId/command', async (req, res) => {
 router.get('/stats/overview', (req, res) => {
   try {
     const stats = webSocketHandler.deviceManager.getOnlineStats();
-    
+
     res.json({
       success: true,
       stats
@@ -163,7 +163,7 @@ router.get('/stats/recent', (req, res) => {
   try {
     const { limit = 10 } = req.query;
     const recentDevices = webSocketHandler.deviceManager.getRecentActiveDevices(parseInt(limit));
-    
+
     res.json({
       success: true,
       count: recentDevices.length,
@@ -189,7 +189,7 @@ router.post('/cleanup', (req, res) => {
   try {
     const { timeoutMinutes = 60 } = req.body;
     const removedDevices = webSocketHandler.deviceManager.cleanupOfflineDevices(timeoutMinutes);
-    
+
     res.json({
       success: true,
       removedCount: removedDevices.length,
@@ -208,7 +208,7 @@ router.post('/cleanup', (req, res) => {
 router.get('/export/data', (req, res) => {
   try {
     const exportData = webSocketHandler.deviceManager.exportDeviceData();
-    
+
     res.json({
       success: true,
       timestamp: new Date().toISOString(),

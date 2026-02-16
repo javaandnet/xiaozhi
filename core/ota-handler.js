@@ -1,8 +1,8 @@
-const os = require('os');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { logger } = require('../utils/logger');
+import crypto from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { logger } from '../utils/logger.js';
 
 class OTAHandler {
   constructor(config) {
@@ -16,9 +16,9 @@ class OTAHandler {
   setupAuth() {
     const serverConfig = this.config.server || {};
     const authConfig = serverConfig.auth || {};
-    
+
     this.authEnabled = authConfig.enabled || false;
-    
+
     if (authConfig.allowed_devices && Array.isArray(authConfig.allowed_devices)) {
       this.allowedDevices = new Set(authConfig.allowed_devices);
     }
@@ -82,7 +82,7 @@ class OTAHandler {
   isHigherVersion(newVersion, oldVersion) {
     const newParts = this.parseVersion(newVersion);
     const oldParts = this.parseVersion(oldVersion);
-    
+
     const maxLen = Math.max(newParts.length, oldParts.length);
     for (let i = 0; i < maxLen; i++) {
       const newPart = newParts[i] || 0;
@@ -98,7 +98,7 @@ class OTAHandler {
    */
   refreshBinCache() {
     const filesByModel = {};
-    
+
     try {
       // 确保目录存在
       if (!fs.existsSync(this.binDir)) {
@@ -107,17 +107,17 @@ class OTAHandler {
 
       // 查找固件文件
       const files = fs.readdirSync(this.binDir);
-      
+
       for (const file of files) {
         if (!file.endsWith('.bin')) continue;
-        
+
         // 文件名格式: {model}_{version}.bin
         const match = file.match(/^(.+?)_([0-9][A-Za-z0-9.\-_]*)\.bin$/);
         if (!match) continue;
-        
+
         const model = match[1];
         const version = match[2];
-        
+
         if (!filesByModel[model]) {
           filesByModel[model] = [];
         }
@@ -149,26 +149,26 @@ class OTAHandler {
       const headers = req.headers || {};
       const deviceId = headers['device-id'] || headers['Device-Id'] || headers['device_id'] || '';
       const clientId = headers['client-id'] || headers['Client-Id'] || headers['client_id'] || '';
-      
+
       // 获取请求体数据（Express已经解析了JSON）
       const bodyData = req.body || {};
-      
+
       // 获取设备型号
-      const deviceModel = headers['device-model'] || headers['Device-Model'] || 
-                         headers['device_model'] || 
-                         (bodyData.board && bodyData.board.type) || 
-                         bodyData.model || 'default';
-      
+      const deviceModel = headers['device-model'] || headers['Device-Model'] ||
+        headers['device_model'] ||
+        (bodyData.board && bodyData.board.type) ||
+        bodyData.model || 'default';
+
       // 获取设备版本
-      const deviceVersion = headers['device-version'] || headers['Device-Version'] || 
-                           headers['device_version'] || 
-                           (bodyData.application && bodyData.application.version) || 
-                           bodyData.version || '0.0.0';
-      
+      const deviceVersion = headers['device-version'] || headers['Device-Version'] ||
+        headers['device_version'] ||
+        (bodyData.application && bodyData.application.version) ||
+        bodyData.version || '0.0.0';
+
       // 获取MAC地址
-      const deviceMac = headers['mac-address'] || headers['Mac-Address'] || 
-                       bodyData.mac_address || bodyData.mac || '';
-      
+      const deviceMac = headers['mac-address'] || headers['Mac-Address'] ||
+        bodyData.mac_address || bodyData.mac || '';
+
       logger.info(`OTA请求: 设备ID=${deviceId}, ClientID=${clientId}, 型号=${deviceModel}, 版本=${deviceVersion}, MAC=${deviceMac}`);
 
       const serverConfig = this.config.server || {};
@@ -190,17 +190,17 @@ class OTAHandler {
 
       // 检查MQTT配置
       const mqttGateway = serverConfig.mqtt_gateway;
-      
+
       if (mqttGateway) {
         // 配置了MQTT网关，返回MQTT配置
         const groupId = `GID_${deviceModel}`.replace(/[:\s]/g, '_');
         const macAddressSafe = deviceId.replace(/:/g, '_');
         const mqttClientId = `${groupId}@@@${macAddressSafe}@@@${macAddressSafe}`;
-        
+
         // 生成用户名
         const userData = JSON.stringify({ ip: 'unknown' });
         const username = Buffer.from(userData).toString('base64');
-        
+
         // 生成密码
         let password = '';
         const signatureKey = serverConfig.mqtt_signature_key || '';
@@ -246,7 +246,7 @@ class OTAHandler {
       try {
         const filesByModel = this.refreshBinCache();
         const candidates = filesByModel[deviceModel] || [];
-        
+
         logger.info(`查找型号 ${deviceModel} 的固件，找到 ${candidates.length} 个候选`);
 
         let chosenUrl = '';
@@ -289,7 +289,7 @@ class OTAHandler {
       const websocketPort = httpPort;
       const localIp = this.getLocalIP();
       const websocketUrl = this.getWebsocketUrl(localIp, websocketPort);
-      
+
       return {
         message: `OTA接口运行正常，向设备发送的websocket地址是：${websocketUrl}`,
         websocket_url: websocketUrl
@@ -308,15 +308,15 @@ class OTAHandler {
     const authConfig = serverConfig.auth || {};
     const secretKey = serverConfig.auth_key || 'default_secret_key';
     const expireSeconds = authConfig.expire_seconds || 2592000;
-    
+
     const timestamp = Math.floor(Date.now() / 1000);
     const content = `${clientId}|${username}|${timestamp}`;
-    
+
     const sig = crypto
       .createHmac('sha256', secretKey)
       .update(content, 'utf8')
       .digest('base64url');
-    
+
     return `${sig}.${timestamp}`;
   }
 
@@ -327,18 +327,18 @@ class OTAHandler {
     try {
       // 安全检查：只允许 basename
       const safeFilename = path.basename(filename);
-      
+
       // 验证文件名格式
       if (!/^[A-Za-z0-9.\-_]+\.bin$/.test(safeFilename)) {
         return { error: 'invalid filename', status: 400 };
       }
 
       const filePath = path.join(this.binDir, safeFilename);
-      
+
       // 验证文件路径
       const realPath = path.resolve(filePath);
       const realDir = path.resolve(this.binDir);
-      
+
       if (!realPath.startsWith(realDir + path.sep)) {
         return { error: 'forbidden', status: 403 };
       }
@@ -359,4 +359,4 @@ class OTAHandler {
   }
 }
 
-module.exports = OTAHandler;
+export default OTAHandler;

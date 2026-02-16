@@ -6,12 +6,12 @@ import { logger } from '../utils/logger.js';
 // 获取所有传感器数据
 router.get('/', (req, res) => {
   try {
-    const { 
-      clientId, 
-      sensorType, 
-      limit = 50, 
-      startTime, 
-      endTime 
+    const {
+      clientId,
+      sensorType,
+      limit = 50,
+      startTime,
+      endTime
     } = req.query;
 
     const sensorData = webSocketHandler.deviceManager.getSensorData({
@@ -52,8 +52,8 @@ router.get('/device/:clientId', (req, res) => {
     }
 
     const sensorData = webSocketHandler.deviceManager.getDeviceSensorData(
-      clientId, 
-      sensorType, 
+      clientId,
+      sensorType,
       parseInt(limit)
     );
 
@@ -99,14 +99,14 @@ router.get('/stats/:sensorType', (req, res) => {
 
     // 计算统计数据
     const values = sensorData.map(d => parseFloat(d.value)).filter(v => !isNaN(v));
-    
+
     let stats = null;
     if (values.length > 0) {
       const sum = values.reduce((a, b) => a + b, 0);
       const avg = sum / values.length;
       const min = Math.min(...values);
       const max = Math.max(...values);
-      
+
       stats = {
         count: values.length,
         average: Math.round(avg * 100) / 100,
@@ -141,7 +141,7 @@ router.get('/types', (req, res) => {
   try {
     const allData = webSocketHandler.deviceManager.getSensorData({ limit: 1000 });
     const sensorTypes = [...new Set(allData.map(d => d.sensorType))].sort();
-    
+
     res.json({
       success: true,
       count: sensorTypes.length,
@@ -160,7 +160,7 @@ router.get('/types', (req, res) => {
 router.get('/realtime', (req, res) => {
   try {
     const { sensorType, limit = 10 } = req.query;
-    
+
     const sensorData = webSocketHandler.deviceManager.getSensorData({
       sensorType,
       limit: parseInt(limit)
@@ -225,16 +225,16 @@ function calculateTrends(data, interval) {
 
   // 按时间排序
   const sortedData = data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  
+
   const trends = [];
   const intervalMs = interval === 'hour' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  
+
   let currentIntervalStart = new Date(sortedData[0].timestamp);
   let currentValues = [];
 
   for (const point of sortedData) {
     const pointTime = new Date(point.timestamp);
-    
+
     // 如果超出当前区间，计算平均值并开始新区间
     if (pointTime >= new Date(currentIntervalStart.getTime() + intervalMs)) {
       if (currentValues.length > 0) {
@@ -245,7 +245,7 @@ function calculateTrends(data, interval) {
           count: currentValues.length
         });
       }
-      
+
       currentIntervalStart = new Date(Math.floor(pointTime.getTime() / intervalMs) * intervalMs);
       currentValues = [parseFloat(point.value)];
     } else {

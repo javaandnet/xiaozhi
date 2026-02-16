@@ -8,6 +8,7 @@ class WebSocketHandler extends WebSocketProtocol {
     this.audioManager = options.audioManager;
     this.ttsService = options.ttsService;
     this.sttService = options.sttService;
+    this.llmService = options.llmService; // 使用传入的LLM服务
   }
 
   handleConnection(ws, req) {
@@ -82,9 +83,12 @@ class WebSocketHandler extends WebSocketProtocol {
         }
         ws.audioParams = audio_params;
         ws.isAuthenticated = true;
+        ws.sessionId = this.sessionManager.createSession(ws.clientId);
+        
         this.sendMessage(ws, {
           type: 'hello',
           transport: 'websocket',
+          session_id: ws.sessionId,
           audio_params: {
             format: 'opus',
             sampleRate: 16000,
@@ -92,7 +96,7 @@ class WebSocketHandler extends WebSocketProtocol {
             frameDuration: 60
           }
         });
-        console.log(`设备握手成功: ${ws.clientId}`);
+        console.log(`设备握手成功: ${ws.clientId}, Session: ${ws.sessionId}`);
         break;
         
       case 'listen':
@@ -107,6 +111,16 @@ class WebSocketHandler extends WebSocketProtocol {
       case 'abort':
         const { reason } = payload;
         console.log(`会话终止 [${ws.sessionId}]: ${reason || '未知原因'} (${ws.clientId})`);
+        // 清除会话数据
+        if (ws.sessionId) {
+          this.sessionManager.endSession(ws.sessionId);
+          if (this.ttsService) {
+            this.ttsService.clearHistory(ws.sessionId);
+          }
+          if (this.sttService) {
+            this.sttService.clearHistory(ws.sessionId);
+          }
+        }
         break;
         
       case 'iot':
@@ -118,9 +132,172 @@ class WebSocketHandler extends WebSocketProtocol {
         const { text: chatText, state: chatState } = payload;
         if (chatState === 'complete' && chatText) {
           console.log(`收到聊天消息 [${ws.clientId}]: ${chatText}`);
+          // 处理完整的聊天消息
+          this.handleCompleteChatMessage(ws, chatText);
         }
         break;
     }
+  }
+
+  /**
+   * 处理完整的聊天消息 - 核心语音对话流程
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {string} text - 用户输入文本
+   */
+  async handleCompleteChatMessage(ws, text) {
+    const sessionId = ws.sessionId;
+    const connectionId = ws.clientId;
+    
+    try {
+      console.log(`开始处理聊天消息 [${connectionId}]: ${text}`);
+      
+      // 1. 发送处理开始状态
+      this.sendMessage(ws, {
+        type: 'processing',
+        session_id: sessionId,
+        state: 'start',
+        timestamp: new Date().toISOString()
+      });
+      
+      // 2. 调用LLM生成回复
+      console.log(`调用LLM服务生成回复...`);
+      let llmResponse;
+      
+      if (this.llmService && this.llmService.isConfigured()) {
+        try {
+          llmResponse = await this.llmService.chat(connectionId, text);
+          console.log(`LLM回复生成成功: ${llmResponse.substring(0, 50)}...`);
+        } catch (llmError) {
+          console.error(`LLM调用失败: ${llmError.message}`);
+          // LLM失败时使用默认回复
+          llmResponse = `我听到了你说的"${text}"。有什么我可以帮助你的吗？`;
+        }
+      } else {
+        // 没有配置LLM时使用默认回复
+        llmResponse = `我听到了你说的"${text}"。有什么我可以帮助你的吗？`;
+        console.log(`使用默认回复: ${llmResponse}`);
+      }
+      
+      // 3. 发送LLM回复消息
+      this.sendMessage(ws, {
+        type: 'llm_response',
+        session_id: sessionId,
+        text: llmResponse,
+        emotion: this.detectEmotion(llmResponse),
+        timestamp: new Date().toISOString()
+      });
+      
+      // 4. 开始TTS合成
+      console.log(`开始TTS语音合成...`);
+      this.sendMessage(ws, {
+        type: 'tts',
+        session_id: sessionId,
+        state: 'start',
+        timestamp: new Date().toISOString()
+      });
+      
+      // 5. 调用TTS服务生成音频
+      if (this.ttsService && this.ttsService.isEnabled()) {
+        try {
+          const ttsResult = await this.ttsService.synthesize(llmResponse);
+          console.log(`TTS合成成功: ${ttsResult.length} bytes`);
+          
+          // 6. 发送TTS音频数据
+          this.sendMessage(ws, {
+            type: 'tts_audio',
+            session_id: sessionId,
+            audio_data: ttsResult.toString('base64'),
+            format: 'mp3',
+            sample_rate: 24000,
+            text: llmResponse,
+            duration: this.estimateAudioDuration(llmResponse),
+            timestamp: new Date().toISOString()
+          });
+          
+        } catch (ttsError) {
+          console.error(`TTS合成失败: ${ttsError.message}`);
+          // TTS失败时发送文本作为备选
+          this.sendMessage(ws, {
+            type: 'tts_fallback',
+            session_id: sessionId,
+            text: llmResponse,
+            error: ttsError.message,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } else {
+        // TTS服务未启用时发送文本
+        console.log(`TTS服务未启用，发送文本回复`);
+        this.sendMessage(ws, {
+          type: 'tts_disabled',
+          session_id: sessionId,
+          text: llmResponse,
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // 7. 发送处理完成状态
+      this.sendMessage(ws, {
+        type: 'processing',
+        session_id: sessionId,
+        state: 'complete',
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log(`聊天消息处理完成 [${connectionId}]`);
+      
+    } catch (error) {
+      console.error(`处理聊天消息失败 [${connectionId}]:`, error);
+      
+      // 发送错误消息
+      this.sendError(ws, `处理消息失败: ${error.message}`, sessionId);
+      
+      // 发送处理结束状态
+      this.sendMessage(ws, {
+        type: 'processing',
+        session_id: sessionId,
+        state: 'error',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * 检测文本情感
+   * @param {string} text - 文本内容
+   * @returns {string} 情感标签
+   */
+  detectEmotion(text) {
+    const positiveWords = ['开心', '高兴', '愉快', '喜欢', '好', '棒', '赞', '谢谢', '感谢'];
+    const negativeWords = ['难过', '伤心', '生气', '愤怒', '不好', '讨厌', '烦', '抱歉', '对不起'];
+    
+    let positiveCount = 0;
+    let negativeCount = 0;
+    
+    positiveWords.forEach(word => {
+      if (text.includes(word)) positiveCount++;
+    });
+    
+    negativeWords.forEach(word => {
+      if (text.includes(word)) negativeCount++;
+    });
+    
+    if (positiveCount > negativeCount) return 'happy';
+    if (negativeCount > positiveCount) return 'sad';
+    return 'neutral';
+  }
+
+  /**
+   * 估算音频时长（毫秒）
+   * @param {string} text - 文本内容
+   * @returns {number} 估算时长
+   */
+  estimateAudioDuration(text) {
+    // 简单估算：每秒3个汉字
+    const charsPerSecond = 3;
+    const seconds = text.length / charsPerSecond;
+    return Math.round(seconds * 1000);
   }
 
   async handleBusinessMessage(ws, data) {

@@ -23,6 +23,7 @@ class XiaoZhiServer {
     this.ttsService = new core.services.Tts(core.config.services.tts);
     this.sttService = new core.services.Stt(core.config.services.stt);
     this.wakeWordService = new core.services.WakeWord(core.config.services.wakeword);
+    this.llmService = new core.services.Llm(core.config); // 初始化LLM服务
     
     this.websocketHandler = new core.handlers.WebSocket({
       wss: this.wss,
@@ -31,7 +32,8 @@ class XiaoZhiServer {
       audioManager: this.audioManager,
       ttsService: this.ttsService,
       sttService: this.sttService,
-      wakeWordService: this.wakeWordService
+      wakeWordService: this.wakeWordService,
+      llmService: this.llmService // 传递LLM服务
     });
   }
 

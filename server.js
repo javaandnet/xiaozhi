@@ -1,15 +1,19 @@
+import cors from 'cors';
+import dotenv from 'dotenv';
 import express from 'express';
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import cors from 'cors';
-import dotenv from 'dotenv';
 dotenv.config();
 
-import { handleWebSocketConnection } from './websocket/handler.js';
+import OTAHandler from './core/ota-handler.js';
 import deviceRoutes from './routes/devices.js';
 import sensorRoutes from './routes/sensors.js';
 import { logger } from './utils/logger.js';
-import OTAHandler from './core/ota-handler.js';
+import { handleWebSocketConnection } from './websocket/handler.js';
+
+// 导入服务
+import LLMService from './core/services/llm.js';
+import TTSService from './core/services/tts.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -17,14 +21,32 @@ const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 8000;
 
-// 初始化OTA处理器
+// 初始化配置
 const config = {
   server: {
     port: PORT,
     http_port: PORT,
     auth_key: process.env.AUTH_KEY || 'xiaozhi-auth-secret-key'
+  },
+  services: {
+    llm: {
+      provider: process.env.LLM_PROVIDER || 'glm',
+      model: process.env.LLM_MODEL || 'glm-4-flash',
+      api_key: process.env.LLM_API_KEY || '',
+      base_url: process.env.LLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4'
+    },
+    tts: {
+      provider: process.env.TTS_PROVIDER || 'edge',
+      voice: process.env.TTS_VOICE || 'zh-CN-XiaoxiaoNeural'
+    }
   }
 };
+
+// 初始化服务
+const llmService = new LLMService(config);
+const ttsService = new TTSService(config);
+
+// 初始化OTA处理器
 const otaHandler = new OTAHandler(config);
 
 // 中间件配置
@@ -79,7 +101,10 @@ app.get('/', (req, res) => {
 
 // WebSocket连接处理
 wss.on('connection', (ws, req) => {
-  handleWebSocketConnection(ws, req, wss);
+  handleWebSocketConnection(ws, req, wss, {
+    llmService: llmService,
+    ttsService: ttsService
+  });
 });
 
 // 错误处理中间件

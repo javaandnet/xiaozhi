@@ -80,7 +80,7 @@ class DeviceManager {
     };
 
     this.sensorData.push(sensorEntry);
-    
+
     // 维护数据大小限制
     if (this.sensorData.length > this.maxSensorData) {
       this.sensorData.shift();
@@ -101,12 +101,12 @@ class DeviceManager {
 
   // 获取传感器数据
   getSensorData(options = {}) {
-    const { 
-      clientId, 
-      sensorType, 
-      limit = 50, 
-      startTime, 
-      endTime 
+    const {
+      clientId,
+      sensorType,
+      limit = 50,
+      startTime,
+      endTime
     } = options;
 
     let filteredData = [...this.sensorData];
@@ -142,7 +142,7 @@ class DeviceManager {
     if (!device) return [];
 
     let data = device.sensorData || [];
-    
+
     if (sensorType) {
       data = data.filter(d => d.sensorType === sensorType);
     }
@@ -156,7 +156,7 @@ class DeviceManager {
   getOnlineStats() {
     const allDevices = this.getAllDevices();
     const onlineDevices = allDevices.filter(device => device.status === 'online');
-    
+
     return {
       total: allDevices.length,
       online: onlineDevices.length,
