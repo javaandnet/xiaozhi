@@ -1,5 +1,5 @@
-const crypto = require('crypto');
-const { logger } = require('../utils/logger');
+import crypto from 'crypto';
+import { logger } from '../utils/logger.js';
 
 class AuthenticationError extends Error {
   constructor(message) {
@@ -148,4 +148,4 @@ class AuthManager {
   }
 }
 
-module.exports = { AuthManager, AuthenticationError };
+export { AuthManager, AuthenticationError };

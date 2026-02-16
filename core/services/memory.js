@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class MemoryService extends BaseService {
   constructor(config = {}) {
@@ -16,4 +16,4 @@ class MemoryService extends BaseService {
   }
 }
 
-module.exports = MemoryService;
+export default MemoryService;

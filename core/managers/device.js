@@ -1,5 +1,5 @@
-const DeviceModel = require('../models/device');
-const { logger } = require('../../utils/logger');
+import DeviceModel from '../models/device.js';
+import { logger } from '../../utils/logger.js';
 
 class DeviceManager {
   constructor() {
@@ -186,4 +186,4 @@ class DeviceManager {
   }
 }
 
-module.exports = DeviceManager;
+export default DeviceManager;

@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class WakeWordService extends BaseService {
   constructor(config = {}) {
@@ -209,4 +209,4 @@ class WakeWordService extends BaseService {
   }
 }
 
-module.exports = WakeWordService;
+export default WakeWordService;

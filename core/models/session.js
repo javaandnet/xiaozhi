@@ -1,4 +1,4 @@
-const BaseModel = require('./base');
+import BaseModel from './base.js';
 
 class SessionModel extends BaseModel {
   constructor(data = {}) {
@@ -79,4 +79,4 @@ class SessionModel extends BaseModel {
   }
 }
 
-module.exports = SessionModel;
+export default SessionModel;

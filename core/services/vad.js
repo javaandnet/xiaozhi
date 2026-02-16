@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class VadService extends BaseService {
   constructor(config = {}) {
@@ -16,4 +16,4 @@ class VadService extends BaseService {
   }
 }
 
-module.exports = VadService;
+export default VadService;

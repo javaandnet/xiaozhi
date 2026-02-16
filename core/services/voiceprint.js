@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class VoiceprintService extends BaseService {
   constructor(config = {}) {
@@ -16,4 +16,4 @@ class VoiceprintService extends BaseService {
   }
 }
 
-module.exports = VoiceprintService;
+export default VoiceprintService;

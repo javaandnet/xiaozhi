@@ -1,5 +1,5 @@
-const { v4: uuidv4 } = require('uuid');
-const { logger } = require('../../utils/logger');
+import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../../utils/logger.js';
 
 class WebSocketProtocol {
   constructor(options = {}) {
@@ -11,7 +11,7 @@ class WebSocketProtocol {
   handleConnection(ws, req) {
     const clientId = uuidv4();
     const clientIp = req.socket.remoteAddress;
-    
+
     logger.info(`新的WebSocket连接: ${clientId} 来自 ${clientIp}`);
 
     // 设置客户端信息
@@ -132,7 +132,7 @@ class WebSocketProtocol {
 
   handleHello(ws, payload) {
     const { version, transport, audio_params } = payload;
-    
+
     if (version !== 1 || transport !== 'websocket') {
       this.sendError(ws, '不支持的协议版本或传输方式', ws.sessionId);
       return;
@@ -157,7 +157,7 @@ class WebSocketProtocol {
 
   handleListen(ws, payload) {
     const { state, mode, text } = payload;
-    
+
     if (!state) {
       this.sendError(ws, '缺少监听状态', ws.sessionId);
       return;
@@ -204,11 +204,11 @@ class WebSocketProtocol {
       type: 'error',
       message: errorMessage
     };
-    
+
     if (sessionId) {
       errorResponse.session_id = sessionId;
     }
-    
+
     this.sendToClient(ws, errorResponse);
   }
 
@@ -241,4 +241,4 @@ class WebSocketProtocol {
   }
 }
 
-module.exports = WebSocketProtocol;
+export default WebSocketProtocol;

@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class AudioService extends BaseService {
   constructor(config = {}) {
@@ -32,4 +32,4 @@ class AudioService extends BaseService {
   }
 }
 
-module.exports = AudioService;
+export default AudioService;

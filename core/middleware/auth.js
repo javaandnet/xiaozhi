@@ -1,5 +1,5 @@
 // 认证中间件
-const { logger } = require('../../utils/logger');
+import { logger } from '../../utils/logger.js';
 
 function authMiddleware(req, res, next) {
   // 简单的API密钥认证
@@ -18,4 +18,4 @@ function authMiddleware(req, res, next) {
   }
 }
 
-module.exports = authMiddleware;
+export default authMiddleware;

@@ -1,5 +1,5 @@
-const AudioModel = require('../models/audio');
-const { logger } = require('../../utils/logger');
+import AudioModel from '../models/audio.js';
+import { logger } from '../../utils/logger.js';
 
 class AudioManager {
   constructor() {
@@ -222,4 +222,4 @@ class AudioManager {
   }
 }
 
-module.exports = AudioManager;
+export default AudioManager;

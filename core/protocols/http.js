@@ -10,4 +10,4 @@ class HttpProtocol {
   }
 }
 
-module.exports = HttpProtocol;
+export default HttpProtocol;

@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class McpService extends BaseService {
   constructor(config = {}) {
@@ -16,4 +16,4 @@ class McpService extends BaseService {
   }
 }
 
-module.exports = McpService;
+export default McpService;

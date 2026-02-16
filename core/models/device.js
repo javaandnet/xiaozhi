@@ -1,4 +1,4 @@
-const BaseModel = require('./base');
+import BaseModel from './base.js';
 
 class DeviceModel extends BaseModel {
   constructor(data = {}) {
@@ -79,4 +79,4 @@ class DeviceModel extends BaseModel {
   }
 }
 
-module.exports = DeviceModel;
+export default DeviceModel;

@@ -1,5 +1,5 @@
 // 验证中间件
-const { logger } = require('../../utils/logger');
+import { logger } from '../../utils/logger.js';
 
 function validationMiddleware(schema) {
   return (req, res, next) => {
@@ -22,4 +22,4 @@ function validationMiddleware(schema) {
   };
 }
 
-module.exports = validationMiddleware;
+export default validationMiddleware;

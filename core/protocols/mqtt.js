@@ -10,4 +10,4 @@ class MqttProtocol {
   }
 }
 
-module.exports = MqttProtocol;
+export default MqttProtocol;

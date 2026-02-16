@@ -1,5 +1,5 @@
-const SessionModel = require('../models/session');
-const { logger } = require('../../utils/logger');
+import SessionModel from '../models/session.js';
+import { logger } from '../../utils/logger.js';
 
 class SessionManager {
   constructor() {
@@ -187,4 +187,4 @@ class SessionManager {
   }
 }
 
-module.exports = SessionManager;
+export default SessionManager;

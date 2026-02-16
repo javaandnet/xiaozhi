@@ -1,4 +1,4 @@
-const BaseModel = require('./base');
+import BaseModel from './base.js';
 
 class AudioModel extends BaseModel {
   constructor(data = {}) {
@@ -81,4 +81,4 @@ class AudioModel extends BaseModel {
   }
 }
 
-module.exports = AudioModel;
+export default AudioModel;

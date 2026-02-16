@@ -1,4 +1,7 @@
-const WebSocketProtocol = require('../../core/protocols/websocket');
+import { v4 as uuidv4 } from 'uuid';
+import WebSocketProtocol from '../protocols/websocket.js';
+import DeviceManager from '../managers/device.js';
+import { logger } from '../../utils/logger.js';
 
 class WebSocketHandler extends WebSocketProtocol {
   constructor(options) {
@@ -13,7 +16,6 @@ class WebSocketHandler extends WebSocketProtocol {
     // 注册到设备管理器
     if (this.deviceManager && !this.deviceManager.addDevice) {
       // 使用内部的deviceManager实例
-      const DeviceManager = require('../../managers/device');
       this.internalDeviceManager = new DeviceManager();
     }
 
@@ -624,7 +626,7 @@ class WebSocketHandler extends WebSocketProtocol {
 // 创建全局WebSocket处理器实例的工厂函数
 let handler = null;
 
-const initializeWebSocketHandler = (options = {}) => {
+export const initializeWebSocketHandler = (options = {}) => {
   if (!handler) {
     handler = new WebSocketHandler(options);
     logger.info('WebSocket处理器已初始化');
@@ -632,22 +634,18 @@ const initializeWebSocketHandler = (options = {}) => {
   return handler;
 };
 
-const handleWebSocketConnection = (ws, req, wss, options = {}) => {
+export const handleWebSocketConnection = (ws, req, wss, options = {}) => {
   // 确保handler已初始化
   const wsHandler = initializeWebSocketHandler(options);
   wsHandler.wss = wss;
   wsHandler.handleConnection(ws, req);
 };
 
-module.exports = WebSocketHandler;
-module.exports.default = WebSocketHandler;
-module.exports.initializeWebSocketHandler = initializeWebSocketHandler;
-module.exports.handleWebSocketConnection = handleWebSocketConnection;
-
 // 导出兼容的 webSocketHandler（在初始化后会被设置）
-Object.defineProperty(module.exports, 'webSocketHandler', {
-  get: function () {
+export const webSocketHandler = {
+  get handler() {
     return handler;
-  },
-  configurable: true
-});
+  }
+};
+
+export default WebSocketHandler;

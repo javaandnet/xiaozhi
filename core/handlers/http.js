@@ -12,4 +12,4 @@ class HttpHandler {
   }
 }
 
-module.exports = HttpHandler;
+export default HttpHandler;

@@ -8,13 +8,13 @@ class CommandHandler {
   // 处理设备命令
   async handleCommand(clientId, command, payload = {}) {
     console.log(`处理设备命令: ${clientId} -> ${command}`);
-    
+
     // 实现具体的命令处理逻辑
     const device = this.deviceManager.getDevice(clientId);
     if (!device) {
       throw new Error(`设备未找到: ${clientId}`);
     }
-    
+
     // 根据命令类型执行相应操作
     switch (command) {
       case 'led_on':
@@ -29,7 +29,7 @@ class CommandHandler {
       default:
         throw new Error(`不支持的命令: ${command}`);
     }
-    
+
     return {
       success: true,
       command,
@@ -38,4 +38,4 @@ class CommandHandler {
   }
 }
 
-module.exports = CommandHandler;
+export default CommandHandler;

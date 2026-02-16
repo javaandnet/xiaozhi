@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class IntentService extends BaseService {
   constructor(config = {}) {
@@ -16,4 +16,4 @@ class IntentService extends BaseService {
   }
 }
 
-module.exports = IntentService;
+export default IntentService;

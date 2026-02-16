@@ -1,5 +1,5 @@
 // 日志中间件
-const { logger } = require('../../utils/logger');
+import { logger } from '../../utils/logger.js';
 
 function loggingMiddleware(req, res, next) {
   const start = Date.now();
@@ -16,4 +16,4 @@ function loggingMiddleware(req, res, next) {
   next();
 }
 
-module.exports = loggingMiddleware;
+export default loggingMiddleware;

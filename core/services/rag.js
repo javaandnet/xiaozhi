@@ -1,4 +1,4 @@
-const BaseService = require('./base');
+import BaseService from './base.js';
 
 class RagService extends BaseService {
   constructor(config = {}) {
@@ -16,4 +16,4 @@ class RagService extends BaseService {
   }
 }
 
-module.exports = RagService;
+export default RagService;

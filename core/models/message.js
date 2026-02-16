@@ -1,4 +1,4 @@
-const BaseModel = require('./base');
+import BaseModel from './base.js';
 
 class MessageModel extends BaseModel {
   constructor(data = {}) {
@@ -78,4 +78,4 @@ class MessageModel extends BaseModel {
   }
 }
 
-module.exports = MessageModel;
+export default MessageModel;
