@@ -10,6 +10,7 @@ import OTAHandler from './core/handlers/ota.js';
 import deviceRoutes from './routes/devices.js';
 import sensorRoutes from './routes/sensors.js';
 import { logger } from './utils/logger.js';
+import SessionManager from './core/managers/session.js';
 
 // 导入服务
 import LLMService from './core/services/llm.js';
@@ -49,6 +50,7 @@ const config = {
 // 初始化服务
 const llmService = new LLMService(config);
 const ttsService = new TTSService(config);
+const sessionManager = new SessionManager();
 
 // 初始化服务
 (async () => {
@@ -124,7 +126,8 @@ app.get('/', (req, res) => {
 wss.on('connection', (ws, req) => {
   handleWebSocketConnection(ws, req, wss, {
     llmService: llmService,
-    ttsService: ttsService
+    ttsService: ttsService,
+    sessionManager: sessionManager
   });
 });
 

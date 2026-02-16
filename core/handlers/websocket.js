@@ -104,25 +104,42 @@ class WebSocketHandler extends WebSocketProtocol {
     // 处理原始ESP32协议消息
     switch (type) {
       case 'hello':
-        const { version, transport, audio_params } = payload;
-        if (version !== 1 || transport !== 'websocket') {
+        // 支持两种hello消息格式
+        const { version, transport, audio_params, device_id, device_name, device_mac, token, features } = payload;
+        
+        // 检查是否是Web客户端格式（没有version和transport字段）
+        const isWebClient = !version && !transport && (device_id || device_name);
+        
+        // 如果不是Web客户端，检查协议版本
+        if (!isWebClient && (version !== 1 || transport !== 'websocket')) {
           this.sendError(ws, '不支持的协议版本或传输方式', ws.sessionId);
           return;
         }
-        ws.audioParams = audio_params;
+        
+        // 保存设备信息
+        if (device_id) ws.deviceId = device_id;
+        if (device_name) ws.deviceName = device_name;
+        if (device_mac) ws.deviceMac = device_mac;
+        if (token) ws.token = token;
+        if (features) ws.features = features;
+        
+        ws.audioParams = audio_params || {
+          format: 'opus',
+          sampleRate: 16000,
+          channels: 1,
+          frameDuration: 60
+        };
         ws.isAuthenticated = true;
-        ws.sessionId = this.sessionManager.createSession(ws.clientId);
+        ws.sessionId = this.sessionManager.createSession({
+          clientId: ws.clientId,
+          deviceId: ws.deviceId || null
+        }).sessionId;
 
         this.sendMessage(ws, {
           type: 'hello',
           transport: 'websocket',
           session_id: ws.sessionId,
-          audio_params: {
-            format: 'opus',
-            sampleRate: 16000,
-            channels: 1,
-            frameDuration: 60
-          }
+          audio_params: ws.audioParams
         });
         console.log(`设备握手成功: ${ws.clientId}, Session: ${ws.sessionId}`);
         break;

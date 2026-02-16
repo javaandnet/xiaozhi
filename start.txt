@@ -1,0 +1,1 @@
+lsof -ti:9999 | xargs kill -9 2>/dev/null; sleep 1; cd /Users/fengleiren/git/xiaozhi && node server.js
