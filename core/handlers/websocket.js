@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
-import WebSocketProtocol from '../protocols/websocket.js';
-import DeviceManager from '../managers/device.js';
 import { logger } from '../../utils/logger.js';
+import DeviceManager from '../managers/device.js';
+import WebSocketProtocol from '../protocols/websocket.js';
+import audioConverter from '../utils/audioConverter.js';
 
 class WebSocketHandler extends WebSocketProtocol {
   constructor(options) {
@@ -96,7 +97,7 @@ class WebSocketHandler extends WebSocketProtocol {
         break;
       default:
         console.warn(`未知消息类型: ${type}`);
-        this.sendError(ws, `未知消息类型: ${type}`);
+      // this.sendError(ws, `未知消息类型: ${type}`);
     }
   }
 
@@ -106,23 +107,23 @@ class WebSocketHandler extends WebSocketProtocol {
       case 'hello':
         // 支持两种hello消息格式
         const { version, transport, audio_params, device_id, device_name, device_mac, token, features } = payload;
-        
+
         // 检查是否是Web客户端格式（没有version和transport字段）
         const isWebClient = !version && !transport && (device_id || device_name);
-        
+
         // 如果不是Web客户端，检查协议版本
         if (!isWebClient && (version !== 1 || transport !== 'websocket')) {
           this.sendError(ws, '不支持的协议版本或传输方式', ws.sessionId);
           return;
         }
-        
+
         // 保存设备信息
         if (device_id) ws.deviceId = device_id;
         if (device_name) ws.deviceName = device_name;
         if (device_mac) ws.deviceMac = device_mac;
         if (token) ws.token = token;
         if (features) ws.features = features;
-        
+
         ws.audioParams = audio_params || {
           format: 'opus',
           sampleRate: 16000,
@@ -158,7 +159,7 @@ class WebSocketHandler extends WebSocketProtocol {
         console.log(`会话终止 [${ws.sessionId}]: ${reason || '未知原因'} (${ws.clientId})`);
         // 清除会话数据
         if (ws.sessionId) {
-          this.sessionManager.endSession(ws.sessionId);
+          this.sessionManager.closeSession(ws.sessionId);
           if (this.ttsService) {
             this.ttsService.clearHistory(ws.sessionId);
           }
@@ -177,6 +178,13 @@ class WebSocketHandler extends WebSocketProtocol {
         const { text: chatText, state: chatState } = payload;
         if (chatState === 'complete' && chatText) {
           console.log(`收到聊天消息 [${ws.clientId}]: ${chatText}`);
+          // 转发用户消息给客户端显示
+          this.sendMessage(ws, {
+            type: 'stt',
+            session_id: ws.sessionId,
+            text: chatText,
+            timestamp: new Date().toISOString()
+          });
           // 处理完整的聊天消息
           this.handleCompleteChatMessage(ws, chatText);
         }
@@ -197,20 +205,24 @@ class WebSocketHandler extends WebSocketProtocol {
       console.log(`开始处理聊天消息 [${connectionId}]: ${text}`);
 
       // 1. 发送处理开始状态
-      this.sendMessage(ws, {
-        type: 'processing',
-        session_id: sessionId,
-        state: 'start',
-        timestamp: new Date().toISOString()
-      });
+      // this.sendMessage(ws, {
+      //   type: 'processing',
+      //   session_id: sessionId,
+      //   state: 'start',
+      //   timestamp: new Date().toISOString()
+      // });
 
       // 2. 调用LLM生成回复
       console.log(`调用LLM服务生成回复...`);
       let llmResponse;
 
       if (this.llmService && this.llmService.isConfigured()) {
+        // 追加人设
+        const personaPrompt = this.getPersonaPrompt();
+        const textWithPersona = `${personaPrompt}\n\n用户说: ${text}`;
+
         try {
-          llmResponse = await this.llmService.chat(connectionId, text);
+          llmResponse = await this.llmService.chat(connectionId, textWithPersona);
           console.log(`LLM回复生成成功: ${llmResponse.substring(0, 50)}...`);
         } catch (llmError) {
           console.error(`LLM调用失败: ${llmError.message}`);
@@ -225,13 +237,13 @@ class WebSocketHandler extends WebSocketProtocol {
 
       // 3. 发送LLM回复消息
       this.sendMessage(ws, {
-        type: 'llm_response',
+        type: 'llm',
         session_id: sessionId,
         text: llmResponse,
         emotion: this.detectEmotion(llmResponse),
         timestamp: new Date().toISOString()
       });
-
+      //http://127.0.0.1:9999/xiaozhi/ota/
       // 4. 开始TTS合成
       console.log(`开始TTS语音合成...`);
       this.sendMessage(ws, {
@@ -245,22 +257,35 @@ class WebSocketHandler extends WebSocketProtocol {
       if (this.ttsService && this.ttsService.isEnabled()) {
         try {
           const ttsResult = await this.ttsService.synthesize(llmResponse);
-          console.log(`TTS合成成功: ${ttsResult.length} bytes`);
+          console.log(`✅ TTS合成完成: ${ttsResult.audio?.length || ttsResult.length} bytes`);
 
-          // 6. 发送TTS音频数据
+          // 6. 发送TTS状态消息 - sentence_start
           this.sendMessage(ws, {
-            type: 'tts_audio',
+            type: 'tts',
             session_id: sessionId,
-            audio_data: ttsResult.toString('base64'),
-            format: 'mp3',
-            sample_rate: 24000,
+            state: 'sentence_start',
             text: llmResponse,
-            duration: this.estimateAudioDuration(llmResponse),
+            timestamp: new Date().toISOString()
+          });
+
+          // 7. 将MP3音频转换为Opus帧并发送
+          const audioBuffer = ttsResult.audio || ttsResult;
+          const opusFrames = await audioConverter.mp3ToOpusFrames(audioBuffer);
+          console.log(`🎵 Opus编码完成: ${opusFrames.length} 帧`);
+
+          // 8. 发送Opus音频帧（二进制）
+          await this.sendOpusAudioFrames(ws, opusFrames, sessionId);
+
+          // 9. 发送TTS停止消息
+          this.sendMessage(ws, {
+            type: 'tts',
+            session_id: sessionId,
+            state: 'stop',
             timestamp: new Date().toISOString()
           });
 
         } catch (ttsError) {
-          console.error(`TTS合成失败: ${ttsError.message}`);
+          console.error(`❌ TTS合成失败: ${ttsError.message}`);
           // TTS失败时发送文本作为备选
           this.sendMessage(ws, {
             type: 'tts_fallback',
@@ -282,12 +307,12 @@ class WebSocketHandler extends WebSocketProtocol {
       }
 
       // 7. 发送处理完成状态
-      this.sendMessage(ws, {
-        type: 'processing',
-        session_id: sessionId,
-        state: 'complete',
-        timestamp: new Date().toISOString()
-      });
+      // this.sendMessage(ws, {
+      //   type: 'processing',
+      //   session_id: sessionId,
+      //   state: 'complete',
+      //   timestamp: new Date().toISOString()
+      // });
 
       console.log(`聊天消息处理完成 [${connectionId}]`);
 
@@ -298,14 +323,23 @@ class WebSocketHandler extends WebSocketProtocol {
       this.sendError(ws, `处理消息失败: ${error.message}`, sessionId);
 
       // 发送处理结束状态
-      this.sendMessage(ws, {
-        type: 'processing',
-        session_id: sessionId,
-        state: 'error',
-        error: error.message,
-        timestamp: new Date().toISOString()
-      });
+      // this.sendMessage(ws, {
+      //   type: 'processing',
+      //   session_id: sessionId,
+      //   state: 'error',
+      //   error: error.message,
+      //   timestamp: new Date().toISOString()
+      // });
     }
+  }
+
+  /**
+   * 获取人设提示词
+   * @returns {string} 人设提示词
+   */
+  getPersonaPrompt() {
+    return '你名字是任小爱，喜欢听音乐和看电影。最喜欢夸每个人帅和漂亮。';
+    // return '你是FSR株式会社的办公助手，社长是孙光。最帅的人也是他。写代码最好的人是任峰磊。';
   }
 
   /**
@@ -343,6 +377,56 @@ class WebSocketHandler extends WebSocketProtocol {
     const charsPerSecond = 3;
     const seconds = text.length / charsPerSecond;
     return Math.round(seconds * 1000);
+  }
+
+  /**
+   * 发送Opus音频帧到客户端
+   * 按照协议发送二进制Opus数据帧
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {Buffer[]} opusFrames - Opus帧数组
+   * @param {string} sessionId - 会话ID
+   */
+  async sendOpusAudioFrames(ws, opusFrames, sessionId) {
+    if (!opusFrames || opusFrames.length === 0) {
+      console.warn('⚠️ 没有Opus帧需要发送');
+      return;
+    }
+
+    const frameDuration = 60; // 每帧时长(ms)
+    const sendDelay = frameDuration; // 发送间隔
+
+    console.log(`📤 开始发送 ${opusFrames.length} 个Opus音频帧`);
+
+    for (let i = 0; i < opusFrames.length; i++) {
+      const frame = opusFrames[i];
+
+      try {
+        // 检查连接状态
+        if (ws.readyState !== 1) { // WebSocket.OPEN = 1
+          console.warn(`⚠️ WebSocket连接已关闭，停止发送音频帧`);
+          break;
+        }
+
+        // 发送二进制Opus帧
+        ws.send(frame);
+
+        // 按照帧时长延迟发送下一帧，模拟实时播放
+        if (i < opusFrames.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, sendDelay));
+        }
+
+        // 每10帧打印一次进度
+        if ((i + 1) % 10 === 0 || i === opusFrames.length - 1) {
+          console.log(`📤 已发送 ${i + 1}/${opusFrames.length} 帧`);
+        }
+
+      } catch (error) {
+        console.error(`❌ 发送音频帧失败 (帧 ${i}):`, error.message);
+        break;
+      }
+    }
+
+    console.log(`✅ Opus音频帧发送完成`);
   }
 
   async handleBusinessMessage(ws, data) {

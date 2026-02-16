@@ -126,7 +126,7 @@ class WebSocketProtocol {
         break;
       default:
         logger.warn(`未知消息类型: ${type}`);
-        this.sendError(ws, `未知消息类型: ${type}`, session_id);
+      // this.sendError(ws, `未知消息类型: ${type}`, session_id);
     }
   }
 

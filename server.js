@@ -5,12 +5,12 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 dotenv.config();
 
-import { handleWebSocketConnection } from './core/handlers/websocket.js';
 import OTAHandler from './core/handlers/ota.js';
+import { handleWebSocketConnection } from './core/handlers/websocket.js';
+import SessionManager from './core/managers/session.js';
 import deviceRoutes from './routes/devices.js';
 import sensorRoutes from './routes/sensors.js';
 import { logger } from './utils/logger.js';
-import SessionManager from './core/managers/session.js';
 
 // 导入服务
 import LLMService from './core/services/llm.js';
