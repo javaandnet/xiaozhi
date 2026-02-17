@@ -1,18 +1,23 @@
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger.js';
 import DeviceManager from '../managers/device.js';
-import WebSocketProtocol from '../protocols/websocket.js';
 import audioConverter from '../utils/audioConverter.js';
 
-class WebSocketHandler extends WebSocketProtocol {
-  constructor(options) {
-    super(options);
+/**
+ * WebSocket 处理器
+ * 负责连接管理、消息处理、业务逻辑
+ */
+class WebSocketHandler {
+  constructor(options = {}) {
+    this.wss = options.wss;
+    this.heartbeatInterval = null;
+    this.config = options.config || {};
     this.deviceManager = options.deviceManager;
     this.sessionManager = options.sessionManager;
     this.audioManager = options.audioManager;
     this.ttsService = options.ttsService;
     this.sttService = options.sttService;
-    this.llmService = options.llmService; // 使用传入的LLM服务
+    this.llmService = options.llmService;
 
     // 注册到设备管理器
     if (this.deviceManager && !this.deviceManager.addDevice) {
@@ -24,14 +29,31 @@ class WebSocketHandler extends WebSocketProtocol {
     this.sendMessage = this.sendToClient.bind(this);
   }
 
-  // 获取设备管理器（兼容内部和外部）
-  getDeviceManager() {
-    return this.deviceManager || this.internalDeviceManager;
-  }
+  // ==================== 连接管理 ====================
 
+  /**
+   * 处理新连接 - 设置客户端信息和事件监听
+   */
   handleConnection(ws, req) {
-    // 先调用父类方法进行基础连接处理
-    super.handleConnection(ws, req);
+    const clientId = uuidv4();
+    const clientIp = req.socket.remoteAddress;
+
+    logger.info(`新的WebSocket连接: ${clientId} 来自 ${clientIp}`);
+
+    // 设置客户端信息
+    ws.clientId = clientId;
+    ws.clientIp = clientIp;
+    ws.connectedAt = new Date();
+    ws.isAlive = true;
+    ws.isAuthenticated = false;
+    ws.sessionId = null;
+
+    // 发送连接确认
+    this.sendToClient(ws, {
+      type: 'connection_ack',
+      clientId: clientId,
+      timestamp: new Date().toISOString()
+    });
 
     // 注册到设备管理器
     const dm = this.getDeviceManager();
@@ -44,12 +66,52 @@ class WebSocketHandler extends WebSocketProtocol {
       });
     }
 
-    // 不再添加额外的message监听器，因为父类已经处理了消息分发
-    // 业务逻辑处理已经在handleMessage中通过switch-case完成
+    // 处理消息
+    ws.on('message', (data) => {
+      try {
+        this.handleMessage(ws, data);
+      } catch (error) {
+        logger.error(`处理消息失败:`, error);
+        this.sendError(ws, '消息处理失败');
+      }
+    });
+
+    // 处理连接关闭
+    ws.on('close', () => {
+      logger.info(`WebSocket连接关闭: ${clientId}`);
+      this.handleDisconnect(ws);
+    });
+
+    // 处理错误
+    ws.on('error', (error) => {
+      logger.error(`WebSocket错误 [${clientId}]:`, error);
+    });
+
+    // 心跳检测
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
   }
 
+  /**
+   * 处理连接断开
+   */
+  handleDisconnect(ws) {
+    const dm = this.getDeviceManager();
+    if (dm && dm.removeDevice) {
+      dm.removeDevice(ws.clientId);
+    }
+    if (ws.sessionId) {
+      logger.info(`会话结束: ${ws.sessionId} (${ws.clientId})`);
+    }
+  }
+
+  // ==================== 消息处理 ====================
+
+  /**
+   * 处理消息
+   */
   handleMessage(ws, data) {
-    // 直接处理所有消息类型，不依赖父类
     let message;
     try {
       message = JSON.parse(data.toString());
@@ -75,7 +137,6 @@ class WebSocketHandler extends WebSocketProtocol {
       case 'abort':
       case 'iot':
       case 'chat':
-        // 处理原始协议消息
         this.handleProtocolMessage(ws, type, payload);
         break;
       case 'start_recognition':
@@ -88,7 +149,6 @@ class WebSocketHandler extends WebSocketProtocol {
         break;
       case 'audio_data':
         console.log(`处理音频数据 [${ws.clientId}]: ${payload.audioData?.length || 0} bytes`);
-        // 调用STT服务处理音频
         this.handleAudioData(ws, payload);
         break;
       case 'wake_word_detected':
@@ -97,9 +157,17 @@ class WebSocketHandler extends WebSocketProtocol {
         break;
       default:
         console.warn(`未知消息类型: ${type}`);
-      // this.sendError(ws, `未知消息类型: ${type}`);
     }
   }
+
+  /**
+   * 处理二进制数据
+   */
+  handleBinaryData(ws, data) {
+    logger.debug(`收到二进制数据: ${data.length} bytes (${ws.clientId})`);
+  }
+
+  // ==================== 协议消息处理 ====================
 
   handleProtocolMessage(ws, type, payload) {
     // 处理原始ESP32协议消息
@@ -547,23 +615,61 @@ class WebSocketHandler extends WebSocketProtocol {
     }
   }
 
-  // 获取设备管理器（兼容内部和外部）
+  // ==================== 工具方法 ====================
+
+  /**
+   * 获取设备管理器
+   */
   getDeviceManager() {
     return this.deviceManager || this.internalDeviceManager;
   }
 
-  // 处理连接断开
-  handleDisconnect(ws) {
-    const dm = this.getDeviceManager();
-    if (dm && dm.removeDevice) {
-      dm.removeDevice(ws.clientId);
-    }
-    if (ws.sessionId) {
-      logger.info(`会话结束: ${ws.sessionId} (${ws.clientId})`);
+  /**
+   * 发送消息到客户端
+   */
+  sendToClient(ws, message) {
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify(message));
     }
   }
 
-  // 发送IoT命令到指定设备
+  /**
+   * 发送错误消息
+   */
+  sendError(ws, errorMessage, sessionId = null) {
+    const errorResponse = {
+      type: 'error',
+      message: errorMessage
+    };
+
+    if (sessionId) {
+      errorResponse.session_id = sessionId;
+    }
+
+    this.sendToClient(ws, errorResponse);
+  }
+
+  // ==================== 心跳检测 ====================
+
+  /**
+   * 启动心跳检测
+   */
+  startHeartbeat(interval = 30000) {
+    // TODO: 待实现心跳检测逻辑
+  }
+
+  /**
+   * 停止心跳检测
+   */
+  stopHeartbeat() {
+    // TODO: 待实现心跳停止逻辑
+  }
+
+  // ==================== 设备命令 ====================
+
+  /**
+   * 发送IoT命令到指定设备
+   */
   sendIotCommand(clientId, command, params = {}) {
     const dm = this.getDeviceManager();
     if (!dm || !dm.getDevice) {
