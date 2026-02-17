@@ -76,7 +76,59 @@ module.exports = {
     // STT服务配置
     stt: {
       provider: process.env.STT_PROVIDER || 'funasr',
-      language: process.env.STT_LANGUAGE || 'zh-CN'
+      language: process.env.STT_LANGUAGE || 'zh-CN',
+      sampleRate: parseInt(process.env.STT_SAMPLE_RATE) || 16000,
+      channels: parseInt(process.env.STT_CHANNELS) || 1,
+      frameDuration: parseInt(process.env.STT_FRAME_DURATION) || 60,
+      maxBufferSize: parseInt(process.env.STT_MAX_BUFFER_SIZE) || 100,
+      vadEnabled: process.env.STT_VAD_ENABLED !== 'false',
+      vadThreshold: parseFloat(process.env.STT_VAD_THRESHOLD) || 0.5,
+      enableWakeWordDetection: process.env.STT_WAKE_WORD_ENABLED === 'true',
+      wakeWords: (process.env.STT_WAKE_WORDS || '小智,你好小智').split(','),
+      outputDir: process.env.STT_OUTPUT_DIR || 'tmp/',
+      deleteAudioFile: process.env.STT_DELETE_AUDIO_FILE !== 'false',
+
+      // 火山引擎豆包ASR配置
+      doubao: {
+        appid: process.env.DOUBAO_ASR_APPID,
+        cluster: process.env.DOUBAO_ASR_CLUSTER,
+        access_token: process.env.DOUBAO_ASR_ACCESS_TOKEN,
+        wsUrl: process.env.DOUBAO_ASR_WS_URL || 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel',
+        uid: process.env.DOUBAO_ASR_UID || 'streaming_asr_service',
+        workflow: process.env.DOUBAO_ASR_WORKFLOW || 'audio_in,resample,partition,vad,fe,decode,itn,nlu_punctuate',
+        resultType: process.env.DOUBAO_ASR_RESULT_TYPE || 'single',
+        enableMultilingual: process.env.DOUBAO_ASR_MULTILINGUAL === 'true'
+      },
+
+      // FunASR配置 - 参照Python config.yaml
+      funasr: {
+        // 服务器模式配置
+        host: process.env.FUNASR_HOST || 'localhost',
+        port: parseInt(process.env.FUNASR_PORT) || 10095,
+        is_ssl: process.env.FUNASR_SSL === 'true',
+        api_key: process.env.FUNASR_API_KEY || 'none',
+        serverUrl: process.env.FUNASR_SERVER_URL,  // 兼容旧配置
+
+        // 模式配置
+        mode: process.env.FUNASR_MODE || 'offline',
+        chunk_size: [5, 10, 5],
+        chunk_interval: 10,
+        itn: process.env.FUNASR_ITN !== 'false'
+      },
+
+      // 讯飞STT配置
+      xunfei: {
+        appId: process.env.XUNFEI_APP_ID,
+        apiKey: process.env.XUNFEI_API_KEY,
+        apiSecret: process.env.XUNFEI_API_SECRET
+      },
+
+      // 阿里云STT配置
+      aliyun: {
+        accessKeyId: process.env.ALIYUN_ACCESS_KEY_ID,
+        accessKeySecret: process.env.ALIYUN_ACCESS_KEY_SECRET,
+        appKey: process.env.ALIYUN_ASR_APP_KEY
+      }
     },
 
     // LLM服务配置

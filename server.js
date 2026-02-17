@@ -14,6 +14,7 @@ import { logger } from './utils/logger.js';
 
 // 导入服务
 import LLMService from './core/services/llm.js';
+import SttService from './core/services/stt.js';
 import TTSService from './core/services/tts.js';
 
 const app = express();
@@ -43,6 +44,21 @@ const config = {
     tts: {
       provider: process.env.TTS_PROVIDER || 'edge',
       voice: process.env.TTS_VOICE || 'zh-CN-XiaoxiaoNeural'
+    },
+    stt: {
+      provider: process.env.STT_PROVIDER || 'doubao',
+      language: process.env.STT_LANGUAGE || 'zh-CN',
+      sampleRate: parseInt(process.env.STT_SAMPLE_RATE) || 16000,
+      vadEnabled: process.env.STT_VAD_ENABLED !== 'false',
+      vadThreshold: parseFloat(process.env.STT_VAD_THRESHOLD) || 0.5,
+      enableWakeWordDetection: process.env.STT_WAKE_WORD_ENABLED === 'true',
+      wakeWords: (process.env.STT_WAKE_WORDS || '小智,你好小智').split(','),
+      // 豆包ASR配置
+      doubao: {
+        appid: process.env.DOUBAO_ASR_APPID,
+        cluster: process.env.DOUBAO_ASR_CLUSTER,
+        access_token: process.env.DOUBAO_ASR_ACCESS_TOKEN
+      }
     }
   }
 };
@@ -50,6 +66,7 @@ const config = {
 // 初始化服务
 const llmService = new LLMService(config);
 const ttsService = new TTSService(config);
+const sttService = new SttService(config.services?.stt || {});
 const sessionManager = new SessionManager();
 
 // 初始化服务
@@ -66,6 +83,13 @@ const sessionManager = new SessionManager();
     console.log('✅ TTS服务初始化成功');
   } catch (error) {
     console.error('❌ TTS服务初始化失败:', error.message);
+  }
+
+  try {
+    await sttService.initialize();
+    console.log('✅ STT服务初始化成功');
+  } catch (error) {
+    console.error('❌ STT服务初始化失败:', error.message);
   }
 })();
 
@@ -127,6 +151,7 @@ wss.on('connection', (ws, req) => {
   handleWebSocketConnection(ws, req, wss, {
     llmService: llmService,
     ttsService: ttsService,
+    sttService: sttService,
     sessionManager: sessionManager
   });
 });

@@ -41,3 +41,4 @@ xiaozhi-server/*
 node_modules/
 data/**
 public/resources/**
+funasr-runtime-resources/**

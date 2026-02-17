@@ -6,6 +6,7 @@ import audioConverter from '../utils/audioConverter.js';
 /**
  * WebSocket 处理器
  * 负责连接管理、消息处理、业务逻辑
+ * 参照Python实现：receiveAudioHandle.py
  */
 class WebSocketHandler {
   constructor(options = {}) {
@@ -18,6 +19,7 @@ class WebSocketHandler {
     this.ttsService = options.ttsService;
     this.sttService = options.sttService;
     this.llmService = options.llmService;
+    this.vadService = options.vadService;
 
     // 注册到设备管理器
     if (this.deviceManager && !this.deviceManager.addDevice) {
@@ -27,6 +29,12 @@ class WebSocketHandler {
 
     // 添加sendMessage兼容性方法
     this.sendMessage = this.sendToClient.bind(this);
+
+    // 初始化STT服务回调
+    if (this.sttService) {
+      this.sttService.setResultCallback(this._handleSttResult.bind(this));
+      this.sttService.setErrorCallback(this._handleSttError.bind(this));
+    }
   }
 
   // ==================== 连接管理 ====================
@@ -111,13 +119,13 @@ class WebSocketHandler {
   /**
    * 处理消息
    */
-  handleMessage(ws, data) {
+  async handleMessage(ws, data) {
     let message;
     try {
       message = JSON.parse(data.toString());
     } catch (error) {
       // 如果不是JSON，可能是二进制音频数据
-      this.handleBinaryData(ws, data);
+      await this.handleBinaryData(ws, data);
       return;
     }
 
@@ -137,7 +145,7 @@ class WebSocketHandler {
       case 'abort':
       case 'iot':
       case 'chat':
-        this.handleProtocolMessage(ws, type, payload);
+        await this.handleProtocolMessage(ws, type, payload);
         break;
       case 'start_recognition':
         console.log(`处理开始识别请求 [${ws.clientId}]`);
@@ -161,15 +169,110 @@ class WebSocketHandler {
   }
 
   /**
-   * 处理二进制数据
+   * 处理二进制数据（音频数据）
+   * 参照Python: receiveAudioHandle.handleAudioMessage
    */
-  handleBinaryData(ws, data) {
-    logger.debug(`收到二进制数据: ${data.length} bytes (${ws.clientId})`);
+  async handleBinaryData(ws, data) {
+    logger.debug(`收到二进制音频数据: ${data.length} bytes (${ws.clientId})`);
+
+    if (!this.sttService) {
+      logger.warn(`STT服务未初始化，无法处理音频数据`);
+      return;
+    }
+
+    try {
+      // 检测是否有人说话（VAD）
+      const hasVoice = await this._detectVoice(ws, data);
+
+      // 如果设备刚刚被唤醒，短暂忽略VAD检测
+      if (ws.justWokenUp) {
+        logger.debug(`设备刚被唤醒，忽略VAD检测`);
+        setTimeout(() => { ws.justWokenUp = false; }, 2000);
+        return;
+      }
+
+      // 如果检测到有人说话，且正在播放，则打斷（非手动模式）
+      if (hasVoice && ws.clientIsSpeaking && ws.clientListenMode !== 'manual') {
+        await this._handleAbort(ws);
+      }
+
+      // 确保会话存在
+      let sessionId = ws.sessionId;
+      if (!sessionId) {
+        // 没有会话时自动创建
+        const sessionResult = this.sessionManager.createSession({
+          clientId: ws.clientId,
+          deviceId: ws.deviceId || null
+        });
+        sessionId = sessionResult.sessionId;
+        ws.sessionId = sessionId;
+        logger.info(`自动创建会话: ${sessionId} (${ws.clientId})`);
+      }
+
+      // 确保STT服务中也有对应会话
+      let sttSession = this.sttService.getSession(sessionId);
+      if (!sttSession) {
+        sttSession = this.sttService.createSession(sessionId, {
+          listenMode: ws.clientListenMode || 'auto',
+          format: ws.audioParams?.format || 'opus'
+        });
+        logger.debug(`创建STT会话: ${sessionId}`);
+      }
+
+      // VAD静默检测 - 参照Python: silero.py
+      // 如果之前有声音，现在没有声音，且静默时间超过阈值，则触发识别
+      const SILENCE_THRESHOLD_MS = 500; // 静默阈值500ms
+      const now = Date.now();
+      
+      // 更新语音窗口
+      ws.clientVoiceWindow = ws.clientVoiceWindow || [];
+      ws.clientVoiceWindow.push(hasVoice);
+      if (ws.clientVoiceWindow.length > 10) {
+        ws.clientVoiceWindow = ws.clientVoiceWindow.slice(-10);
+      }
+      
+      // 判断当前是否有声音（窗口内超过一半帧有声音）
+      const voiceFrameCount = ws.clientVoiceWindow.filter(v => v).length;
+      const clientHaveVoice = voiceFrameCount >= 5;
+      
+      logger.debug(`VAD窗口: ${voiceFrameCount}/10 帧有声音, 当前状态: ${clientHaveVoice ? '有声音' : '静默'}, 之前状态: ${ws.clientHaveVoice ? '有声音' : '静默'}`);
+      
+      // 如果之前有声音，现在没有声音，且静默时间超过阈值
+      if (ws.clientHaveVoice && !clientHaveVoice) {
+        const silenceDuration = now - (ws.lastVoiceTime || now);
+        logger.info(`检测到静默: ${silenceDuration}ms (阈值: ${SILENCE_THRESHOLD_MS}ms)`);
+        if (silenceDuration >= SILENCE_THRESHOLD_MS) {
+          logger.info(`✅ 检测到语音停止，静默时间: ${silenceDuration}ms，触发识别`);
+          ws.clientVoiceStop = true;
+        }
+      }
+      
+      // 更新状态
+      if (clientHaveVoice) {
+        ws.clientHaveVoice = true;
+        ws.lastVoiceTime = now;
+      }
+
+      // 接收音频并处理
+      await this.sttService.receiveAudio(sessionId, data, {
+        hasVoice,
+        format: ws.audioParams?.format || 'opus'
+      });
+
+      // 如果检测到语音停止，触发识别
+      if (ws.clientVoiceStop && ws.clientListenMode !== 'manual') {
+        ws.clientVoiceStop = false;
+        await this._triggerSttRecognition(ws, sessionId);
+      }
+
+    } catch (error) {
+      logger.error(`处理二进制音频数据失败: ${error.message}`);
+    }
   }
 
   // ==================== 协议消息处理 ====================
 
-  handleProtocolMessage(ws, type, payload) {
+  async handleProtocolMessage(ws, type, payload) {
     // 处理原始ESP32协议消息
     switch (type) {
       case 'hello':
@@ -215,11 +318,61 @@ class WebSocketHandler {
 
       case 'listen':
         const { state: listenState, mode, text: listenText } = payload;
+
+        // 设置监听模式
+        if (mode) {
+          ws.clientListenMode = mode;
+          logger.debug(`客户端监听模式: ${mode}`);
+        }
+
         if (!listenState) {
           this.sendError(ws, '缺少监听状态', ws.sessionId);
           return;
         }
+
         console.log(`监听状态更新 [${ws.clientId}]: ${listenState}`);
+
+        // 处理不同的监听状态
+        if (listenState === 'start') {
+          // 开始监听，清除音频状态
+          ws.clientHaveVoice = false;
+          ws.clientVoiceStop = false;
+          if (ws.sessionId && this.sttService) {
+            this.sttService.clearAudioBuffer(ws.sessionId);
+          }
+        } else if (listenState === 'stop') {
+          // 停止监听，触发语音识别
+          ws.clientVoiceStop = true;
+
+          // 确保会话存在
+          let sessionId = ws.sessionId;
+          if (!sessionId) {
+            const sessionResult = this.sessionManager.createSession({
+              clientId: ws.clientId,
+              deviceId: ws.deviceId || null
+            });
+            sessionId = sessionResult.sessionId;
+            ws.sessionId = sessionId;
+          }
+
+          // 触发语音识别
+          if (this.sttService && sessionId) {
+            // 设置语音停止标志
+            this.sttService.setVoiceStop(sessionId, true);
+
+            // 触发识别处理
+            await this._triggerSttRecognition(ws, sessionId);
+          }
+        } else if (listenState === 'detect') {
+          // 检测模式，处理文本
+          ws.clientHaveVoice = false;
+          ws.clientVoiceStop = false;
+
+          if (listenText) {
+            // 直接处理文本
+            await this._startToChat(ws, listenText);
+          }
+        }
         break;
 
       case 'abort':
@@ -524,6 +677,9 @@ class WebSocketHandler {
     }
   }
 
+  /**
+   * 处理音频数据消息（JSON格式的audio_data消息）
+   */
   async handleAudioData(ws, message) {
     const { audioData, sessionId } = message;
 
@@ -533,24 +689,36 @@ class WebSocketHandler {
     }
 
     try {
-      // 使用STT服务处理音频数据
+      // 解码Base64音频数据
       const audioBuffer = Buffer.from(audioData, 'base64');
-      const result = await this.sttService.recognize(audioBuffer, {
-        enableWakeWordDetection: true,
-        sessionId: sessionId
-      });
 
-      // 发送识别结果
-      this.sendMessage(ws, {
-        type: 'recognition_result',
-        result: result,
-        sessionId: sessionId
-      });
-
-      // 如果检测到唤醒词，发送特殊响应
-      if (result.isWakeWord) {
-        await this.handleWakeWordResponse(ws, result, sessionId);
+      // 确保有会话
+      const currentSessionId = sessionId || ws.sessionId;
+      if (!currentSessionId) {
+        this.sendError(ws, '没有活动会话');
+        return;
       }
+
+      // 确保STT会话存在
+      let sttSession = this.sttService.getSession(currentSessionId);
+      if (!sttSession) {
+        sttSession = this.sttService.createSession(currentSessionId, {
+          listenMode: ws.clientListenMode || 'auto'
+        });
+      }
+
+      // 接收音频数据
+      await this.sttService.receiveAudio(currentSessionId, audioBuffer, {
+        hasVoice: true,
+        format: ws.audioParams?.format || 'opus'
+      });
+
+      // 发送接收确认
+      this.sendMessage(ws, {
+        type: 'audio_received',
+        sessionId: currentSessionId,
+        timestamp: new Date().toISOString()
+      });
 
     } catch (error) {
       console.error('音频处理失败:', error);
@@ -827,6 +995,284 @@ class WebSocketHandler {
     ];
 
     return responses[Math.floor(Math.random() * responses.length)];
+  }
+
+  // ==================== STT音频处理辅助方法 ====================
+
+  /**
+   * 触发STT语音识别
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {string} sessionId - 会话ID
+   */
+  async _triggerSttRecognition(ws, sessionId) {
+    logger.info(`🎬 开始触发语音识别: ${sessionId}`);
+      
+    if (!this.sttService) {
+      logger.warn(`STT服务未初始化`);
+      return;
+    }
+      
+    const session = this.sttService.getSession(sessionId);
+    if (!session) {
+      logger.warn(`STT会话不存在: ${sessionId}`);
+      return;
+    }
+      
+    // 获取缓存的音频数据
+    const audioBuffer = session.audioBuffer || [];
+      
+    // 清空缓冲区
+    session.audioBuffer = [];
+    session.voiceStop = false;
+      
+    logger.info(`📦 音频缓冲区帧数: ${audioBuffer.length}`);
+      
+    if (audioBuffer.length < 15) {
+      logger.debug(`音频数据不足，跳过识别: ${audioBuffer.length} 帧`);
+      return;
+    }
+      
+    logger.info(`🎤 开始语音识别，音频帧数: ${audioBuffer.length}`);
+      
+    try {
+      // 直接调用STT服务的内部方法处理音频
+      await this.sttService._handleVoiceStop(session, audioBuffer);
+      logger.info(`✅ 语音识别调用完成`);
+    } catch (error) {
+      logger.error(`❌ 语音识别失败: ${error.message}`);
+      this.sendError(ws, `语音识别失败: ${error.message}`, sessionId);
+    }
+  }
+
+  /**
+   * 处理STT识别结果回调
+   * @param {string} sessionId - 会话ID
+   * @param {Object} result - 识别结果
+   */
+  async _handleSttResult(sessionId, result) {
+    const ws = this._getWsBySessionId(sessionId);
+    if (!ws) {
+      logger.warn(`找不到会话对应的WebSocket连接: ${sessionId}`);
+      return;
+    }
+
+    const { text, confidence, provider } = result;
+
+    // 发送STT识别结果消息
+    this.sendMessage(ws, {
+      type: 'stt',
+      session_id: sessionId,
+      text: text,
+      confidence: confidence,
+      provider: provider,
+      timestamp: new Date().toISOString()
+    });
+
+    // 开始聊天流程
+    await this._startToChat(ws, text);
+  }
+
+  /**
+   * 处理STT错误回调
+   * @param {string} sessionId - 会话ID
+   * @param {Error} error - 错误对象
+   */
+  _handleSttError(sessionId, error) {
+    const ws = this._getWsBySessionId(sessionId);
+    if (ws) {
+      this.sendError(ws, `语音识别失败: ${error.message}`, sessionId);
+    }
+  }
+
+  /**
+   * 根据会话ID获取WebSocket连接
+   * @param {string} sessionId - 会话ID
+   * @returns {WebSocket|null}
+   */
+  _getWsBySessionId(sessionId) {
+    if (!this.wss) return null;
+
+    for (const client of this.wss.clients) {
+      if (client.sessionId === sessionId) {
+        return client;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 开始聊天流程
+   * 参照Python: startToChat
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {string} text - 用户文本
+   */
+  async _startToChat(ws, text) {
+    // 解析JSON格式的输入（可能包含说话人信息）
+    let speakerName = null;
+    let languageTag = null;
+    let actualText = text;
+
+    try {
+      if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
+        const data = JSON.parse(text);
+        if (data.speaker && data.content) {
+          speakerName = data.speaker;
+          languageTag = data.language;
+          actualText = data.content;
+          ws.currentSpeaker = speakerName;
+          ws.currentLanguageTag = languageTag || 'zh';
+        }
+      }
+    } catch (e) {
+      // 非JSON格式，直接使用原文本
+    }
+
+    // 检查是否需要绑定设备
+    if (ws.needBind) {
+      await this._checkBindDevice(ws);
+      return;
+    }
+
+    // 检查输出限制
+    if (ws.maxOutputSize > 0) {
+      // TODO: 实现输出限制检查
+    }
+
+    // 如果正在播放，打斷（非手动模式）
+    if (ws.clientIsSpeaking && ws.clientListenMode !== 'manual') {
+      await this._handleAbort(ws);
+    }
+
+    // 进行意图分析（如果配置了意图服务）
+    const intentHandled = await this._handleIntent(ws, actualText);
+    if (intentHandled) {
+      return;
+    }
+
+    // 处理完整的聊天消息
+    await this.handleCompleteChatMessage(ws, actualText);
+  }
+
+  /**
+   * 处理意图
+   */
+  async _handleIntent(ws, text) {
+    // TODO: 实现意图分析
+    return false;
+  }
+
+  /**
+   * 检查设备绑定
+   */
+  async _checkBindDevice(ws) {
+    if (ws.bindCode) {
+      const text = `请登录控制面板，输入${ws.bindCode}，绑定设备。`;
+      this.sendMessage(ws, {
+        type: 'stt',
+        session_id: ws.sessionId,
+        text: text,
+        timestamp: new Date().toISOString()
+      });
+      // TODO: 播放提示音
+    } else {
+      const text = '没有找到该设备的版本信息，请正确配置OTA地址，然后重新编译固件。';
+      this.sendMessage(ws, {
+        type: 'stt',
+        session_id: ws.sessionId,
+        text: text,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * 检测语音活动（VAD）
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {Buffer} audioData - 音频数据
+   * @returns {boolean} 是否有语音
+   */
+  async _detectVoice(ws, audioData) {
+    // 如果有VAD服务，使用VAD服务
+    if (this.vadService && this.vadService.isEnabled()) {
+      return this.vadService.detect(audioData);
+    }
+
+    // 简单的能量检测VAD
+    if (!audioData || audioData.length === 0) {
+      return false;
+    }
+
+    // Opus帧的能量检测 - 使用更大的阈值
+    let energy = 0;
+    const sampleCount = Math.min(audioData.length, 160);
+
+    for (let i = 0; i < sampleCount; i++) {
+      energy += Math.abs(audioData[i]);
+    }
+    energy /= sampleCount;
+
+    // 使用较低阈值，避免漏检
+    const threshold = this.config.vad?.threshold || 30;
+    const hasVoice = energy > threshold;
+    
+    // 调试输出
+    if (hasVoice) {
+      logger.debug(`VAD检测: 有声音 (能量=${energy.toFixed(1)}, 阈值=${threshold})`);
+    }
+    
+    return hasVoice;
+  }
+
+  /**
+   * 处理打斷
+   * @param {WebSocket} ws - WebSocket连接
+   */
+  async _handleAbort(ws) {
+    logger.info(`处理打斷请求 [${ws.clientId}]`);
+
+    // 发送打斷消息
+    this.sendMessage(ws, {
+      type: 'abort',
+      session_id: ws.sessionId,
+      reason: 'user_interrupt',
+      timestamp: new Date().toISOString()
+    });
+
+    // 设置状态
+    ws.clientIsSpeaking = false;
+    ws.clientAbort = true;
+  }
+
+  /**
+   * 检查空闲超时
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {boolean} hasVoice - 是否有语音
+   */
+  async _checkIdleTimeout(ws, hasVoice) {
+    const now = Date.now();
+
+    if (hasVoice) {
+      ws.lastActivityTime = now;
+      return;
+    }
+
+    // 只有在已初始化时间戳的情况下才检查超时
+    if (ws.lastActivityTime && ws.lastActivityTime > 0) {
+      const noVoiceTime = now - ws.lastActivityTime;
+      const timeout = (this.config.close_connection_no_voice_time || 120) * 1000;
+
+      if (!ws.closeAfterChat && noVoiceTime > timeout) {
+        logger.info(`长时间无语音，准备关闭连接 [${ws.clientId}]`);
+        ws.closeAfterChat = true;
+        ws.clientAbort = false;
+
+        // 发送结束提示
+        const endPrompt = this.config.end_prompt?.prompt ||
+          '请你以```时间过得真快```为开头，用富有感情、依依不舍的话来结束这场对话吧。';
+
+        await this._startToChat(ws, endPrompt);
+      }
+    }
   }
 }
 
