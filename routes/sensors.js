@@ -14,7 +14,7 @@ router.get('/', (req, res) => {
       endTime
     } = req.query;
 
-    const sensorData = webSocketHandler.deviceManager.getSensorData({
+    const sensorData = webSocketHandler.handler.deviceManager.getSensorData({
       clientId,
       sensorType,
       limit: parseInt(limit),
@@ -43,7 +43,7 @@ router.get('/device/:clientId', (req, res) => {
     const { sensorType, limit = 50 } = req.query;
 
     // 验证设备是否存在
-    const device = webSocketHandler.deviceManager.getDevice(clientId);
+    const device = webSocketHandler.handler.deviceManager.getDevice(clientId);
     if (!device) {
       return res.status(404).json({
         success: false,
@@ -51,7 +51,7 @@ router.get('/device/:clientId', (req, res) => {
       });
     }
 
-    const sensorData = webSocketHandler.deviceManager.getDeviceSensorData(
+    const sensorData = webSocketHandler.handler.deviceManager.getDeviceSensorData(
       clientId,
       sensorType,
       parseInt(limit)
@@ -82,7 +82,7 @@ router.get('/stats/:sensorType', (req, res) => {
     const endTime = new Date();
     const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
 
-    const sensorData = webSocketHandler.deviceManager.getSensorData({
+    const sensorData = webSocketHandler.handler.deviceManager.getSensorData({
       sensorType,
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString()
@@ -139,7 +139,7 @@ router.get('/stats/:sensorType', (req, res) => {
 // 获取所有传感器类型
 router.get('/types', (req, res) => {
   try {
-    const allData = webSocketHandler.deviceManager.getSensorData({ limit: 1000 });
+    const allData = webSocketHandler.handler.deviceManager.getSensorData({ limit: 1000 });
     const sensorTypes = [...new Set(allData.map(d => d.sensorType))].sort();
 
     res.json({
@@ -161,7 +161,7 @@ router.get('/realtime', (req, res) => {
   try {
     const { sensorType, limit = 10 } = req.query;
 
-    const sensorData = webSocketHandler.deviceManager.getSensorData({
+    const sensorData = webSocketHandler.handler.deviceManager.getSensorData({
       sensorType,
       limit: parseInt(limit)
     });
@@ -190,7 +190,7 @@ router.get('/trends/:sensorType', (req, res) => {
     const endTime = new Date();
     const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
 
-    const sensorData = webSocketHandler.deviceManager.getSensorData({
+    const sensorData = webSocketHandler.handler.deviceManager.getSensorData({
       sensorType,
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString()

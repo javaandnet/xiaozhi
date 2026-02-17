@@ -6,7 +6,8 @@ import { WebSocketServer } from 'ws';
 dotenv.config();
 
 import OTAHandler from './core/handlers/ota.js';
-import { handleWebSocketConnection } from './core/handlers/websocket.js';
+import { handleWebSocketConnection, initializeWebSocketHandler } from './core/handlers/websocket.js';
+import DeviceManager from './core/managers/device.js';
 import SessionManager from './core/managers/session.js';
 import deviceRoutes from './routes/devices.js';
 import sensorRoutes from './routes/sensors.js';
@@ -68,6 +69,16 @@ const llmService = new LLMService(config);
 const ttsService = new TTSService(config);
 const sttService = new SttService(config.services?.stt || {});
 const sessionManager = new SessionManager();
+const deviceManager = new DeviceManager();
+
+// 初始化 WebSocketHandler（必须在路由加载之前）
+initializeWebSocketHandler({
+  deviceManager,
+  sessionManager,
+  llmService,
+  ttsService,
+  sttService
+});
 
 // 初始化服务
 (async () => {

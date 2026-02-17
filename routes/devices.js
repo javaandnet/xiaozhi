@@ -6,11 +6,11 @@ const router = express.Router();
 // 获取所有设备列表
 router.get('/', (req, res) => {
   try {
-    const devices = webSocketHandler.deviceManager.getAllDevices();
+    const devices = webSocketHandler.handler.deviceManager.getAllDevices();
     const formattedDevices = devices.map(device => ({
-      clientId: device.id,
+      clientId: device.clientId,
       deviceId: device.deviceId,
-      deviceType: device.deviceType,
+      deviceType: device.type,
       ip: device.ip,
       status: device.status,
       battery: device.battery,
@@ -23,7 +23,7 @@ router.get('/', (req, res) => {
     res.json({
       success: true,
       count: formattedDevices.length,
-      devices: formattedDevices
+      data: formattedDevices
     });
   } catch (error) {
     logger.error('获取设备列表失败:', error);
@@ -38,7 +38,7 @@ router.get('/', (req, res) => {
 router.get('/:clientId', (req, res) => {
   try {
     const { clientId } = req.params;
-    const device = webSocketHandler.deviceManager.getDevice(clientId);
+    const device = webSocketHandler.handler.deviceManager.getDevice(clientId);
 
     if (!device) {
       return res.status(404).json({
@@ -50,9 +50,9 @@ router.get('/:clientId', (req, res) => {
     res.json({
       success: true,
       device: {
-        clientId: device.id,
+        clientId: device.clientId,
         deviceId: device.deviceId,
-        deviceType: device.deviceType,
+        deviceType: device.type,
         ip: device.ip,
         status: device.status,
         battery: device.battery,
@@ -76,7 +76,7 @@ router.get('/:clientId', (req, res) => {
 router.get('/by-device-id/:deviceId', (req, res) => {
   try {
     const { deviceId } = req.params;
-    const device = webSocketHandler.deviceManager.getDeviceByDeviceId(deviceId);
+    const device = webSocketHandler.handler.deviceManager.getDeviceByDeviceId(deviceId);
 
     if (!device) {
       return res.status(404).json({
@@ -88,9 +88,9 @@ router.get('/by-device-id/:deviceId', (req, res) => {
     res.json({
       success: true,
       device: {
-        clientId: device.id,
+        clientId: device.clientId,
         deviceId: device.deviceId,
-        deviceType: device.deviceType,
+        deviceType: device.type,
         ip: device.ip,
         status: device.status,
         battery: device.battery,
@@ -143,7 +143,7 @@ router.post('/:clientId/command', async (req, res) => {
 // 获取设备统计数据
 router.get('/stats/overview', (req, res) => {
   try {
-    const stats = webSocketHandler.deviceManager.getOnlineStats();
+    const stats = webSocketHandler.handler.deviceManager.getOnlineStats();
 
     res.json({
       success: true,
@@ -162,15 +162,15 @@ router.get('/stats/overview', (req, res) => {
 router.get('/stats/recent', (req, res) => {
   try {
     const { limit = 10 } = req.query;
-    const recentDevices = webSocketHandler.deviceManager.getRecentActiveDevices(parseInt(limit));
+    const recentDevices = webSocketHandler.handler.deviceManager.getRecentActiveDevices(parseInt(limit));
 
     res.json({
       success: true,
       count: recentDevices.length,
       devices: recentDevices.map(device => ({
-        clientId: device.id,
+        clientId: device.clientId,
         deviceId: device.deviceId,
-        deviceType: device.deviceType,
+        deviceType: device.type,
         lastSeen: device.lastSeen,
         status: device.status
       }))
@@ -188,7 +188,7 @@ router.get('/stats/recent', (req, res) => {
 router.post('/cleanup', (req, res) => {
   try {
     const { timeoutMinutes = 60 } = req.body;
-    const removedDevices = webSocketHandler.deviceManager.cleanupOfflineDevices(timeoutMinutes);
+    const removedDevices = webSocketHandler.handler.deviceManager.cleanupOfflineDevices(timeoutMinutes);
 
     res.json({
       success: true,
@@ -207,7 +207,7 @@ router.post('/cleanup', (req, res) => {
 // 导出设备数据
 router.get('/export/data', (req, res) => {
   try {
-    const exportData = webSocketHandler.deviceManager.exportDeviceData();
+    const exportData = webSocketHandler.handler.deviceManager.exportDeviceData();
 
     res.json({
       success: true,

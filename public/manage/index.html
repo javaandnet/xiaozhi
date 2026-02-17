@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小智物联网监控平台</title>
+    <title>小智Node.js客户端</title>
     <style>
         * {
             margin: 0;
@@ -13,527 +14,408 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f5f5f5;
-            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
-            padding: 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
         }
 
-        header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .header {
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
             color: white;
             padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        h1 {
-            font-size: 2em;
-            margin-bottom: 10px;
-        }
-
-        .stats-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             text-align: center;
         }
 
-        .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #667eea;
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
         }
 
-        .stat-label {
-            color: #666;
-            margin-top: 5px;
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
         }
 
-        .devices-section, .sensors-section {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .section-title {
-            font-size: 1.5em;
-            margin-bottom: 15px;
-            color: #333;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
+        .connection-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
             margin-top: 10px;
+            font-size: 14px;
         }
 
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #ff4757;
         }
 
-        th {
-            background-color: #f8f9fa;
-            font-weight: 600;
-        }
-
-        tr:hover {
-            background-color: #f5f5f5;
-        }
-
-        .status-online {
-            color: #28a745;
-            font-weight: bold;
-        }
-
-        .status-offline {
-            color: #dc3545;
-            font-weight: bold;
+        .status-indicator.connected {
+            background-color: #2ed573;
         }
 
         .controls {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
             display: flex;
-            gap: 10px;
-            margin-top: 10px;
+            flex-direction: column;
+            gap: 15px;
         }
 
-        button {
-            padding: 8px 16px;
+        .server-config {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .config-label {
+            font-weight: 500;
+            color: #495057;
+            white-space: nowrap;
+        }
+
+        .server-input {
+            flex: 1;
+            min-width: 250px;
+            padding: 8px 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 20px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .server-input:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .connection-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
             border: none;
-            border-radius: 5px;
+            border-radius: 25px;
             cursor: pointer;
             font-size: 14px;
+            font-weight: 500;
             transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .btn-primary {
-            background-color: #667eea;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
             color: white;
-        }
-
-        .btn-primary:hover {
-            background-color: #5a6fd8;
         }
 
         .btn-success {
-            background-color: #28a745;
+            background: linear-gradient(90deg, #2ed573 0%, #1dd1a1 100%);
             color: white;
-        }
-
-        .btn-success:hover {
-            background-color: #218838;
         }
 
         .btn-danger {
-            background-color: #dc3545;
+            background: linear-gradient(90deg, #ff4757 0%, #ff6b81 100%);
             color: white;
         }
 
-        .btn-danger:hover {
-            background-color: #c82333;
+        .btn-secondary {
+            background: linear-gradient(90deg, #6c757d 0%, #5a6268 100%);
+            color: white;
         }
 
-        .sensor-data {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
-        .sensor-card {
-            background: white;
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
             padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background: #ffffff;
         }
 
-        .sensor-value {
-            font-size: 2em;
-            font-weight: bold;
-            text-align: center;
-            margin: 10px 0;
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 18px;
+            max-width: 80%;
+            animation: fadeIn 0.3s ease;
         }
 
-        .sensor-unit {
-            color: #666;
-            text-align: center;
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        .refresh-btn {
-            background-color: #17a2b8;
+        .message.user {
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
             color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            float: right;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
         }
 
-        .refresh-btn:hover {
-            background-color: #138496;
+        .message.bot {
+            background: #f1f2f6;
+            color: #2f3542;
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
         }
 
-        .websocket-status {
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
+        .message.system {
+            background: #ffd32a;
+            color: #2f3542;
             text-align: center;
-            font-weight: bold;
+            margin: 10px auto;
+            max-width: 60%;
+            font-size: 13px;
         }
 
-        .status-connected {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+        .message-header {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-bottom: 5px;
         }
 
-        .status-disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+        .message-content {
+            line-height: 1.5;
         }
 
-        @media (max-width: 768px) {
-            .container {
-                padding: 10px;
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            gap: 10px;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e9ecef;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .message-input:focus {
+            border-color: #4facfe;
+        }
+
+        .send-btn {
+            padding: 12px 25px;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
             }
-            
-            .stats-container {
-                grid-template-columns: 1fr 1fr;
-            }
-            
-            .controls {
-                flex-direction: column;
-            }
-            
-            button {
-                width: 100%;
-            }
+        }
+
+        .info-panel {
+            padding: 15px 20px;
+            background: #e8f4f8;
+            border-top: 1px solid #bee5eb;
+            font-size: 13px;
+            color: #0c5460;
+        }
+
+        .info-item {
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .info-label {
+            font-weight: 500;
+        }
+
+        .clear-btn {
+            background: #ffa502;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .clear-btn:hover {
+            background: #ff8c00;
+        }
+
+        /* 滚动条样式 */
+        .chat-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
-        <header>
-            <h1>🤖 小智物联网监控平台</h1>
-            <p>实时监控和控制您的IoT设备</p>
-            <div style="margin-top: 15px;">
-                <a href="/ws-test.html" style="background: #28a745; color: white; padding: 8px 16px; text-decoration: none; border-radius: 5px; margin-right: 10px;">🔧 完整测试工具</a>
-                <a href="/simple-ws-test.html" style="background: #17a2b8; color: white; padding: 8px 16px; text-decoration: none; border-radius: 5px; margin-right: 10px;">⚡ 简易测试</a>
-                <a href="/debug-ws.html" style="background: #ffc107; color: black; padding: 8px 16px; text-decoration: none; border-radius: 5px;">📡 调试测试</a>
-            </div>
-        </header>
-
-        <div id="websocketStatus" class="websocket-status status-disconnected">
-            WebSocket连接状态: 断开连接
-        </div>
-
-        <div class="stats-container">
-            <div class="stat-card">
-                <div class="stat-value" id="totalDevices">0</div>
-                <div class="stat-label">总设备数</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="onlineDevices">0</div>
-                <div class="stat-label">在线设备</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="sensorDataCount">0</div>
-                <div class="stat-label">传感器数据</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="serverUptime">--:--:--</div>
-                <div class="stat-label">服务器运行时间</div>
+        <div class="header">
+            <h1>🤖 小智Node.js客户端</h1>
+            <div class="connection-status">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">未连接</span>
             </div>
         </div>
 
-        <div class="devices-section">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 class="section-title">设备列表</h2>
-                <button class="refresh-btn" onclick="loadDevices()">刷新设备</button>
+        <div class="controls">
+            <div class="server-config">
+                <label for="serverUrlInput" class="config-label">服务器地址:</label>
+                <input type="text" id="serverUrlInput" class="server-input" value="http://localhost:8003"
+                    placeholder="输入服务器地址 (如: http://localhost:8003)">
+                <button class="btn btn-secondary" id="saveServerBtn">
+                    💾 保存
+                </button>
+                <span id="wsUrlDisplay" style="margin-left: 10px; font-size: 12px; color: #6c757d;"></span>
             </div>
-            <table id="devicesTable">
-                <thead>
-                    <tr>
-                        <th>设备ID</th>
-                        <th>设备类型</th>
-                        <th>IP地址</th>
-                        <th>状态</th>
-                        <th>电池</th>
-                        <th>信号</th>
-                        <th>最后在线</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="devicesTableBody">
-                    <tr>
-                        <td colspan="8" style="text-align: center;">加载中...</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div class="connection-buttons">
+                <button class="btn btn-success" id="connectBtn">
+                    🔗 连接服务器
+                </button>
+                <button class="btn btn-danger" id="disconnectBtn" disabled>
+                    🔌 断开连接
+                </button>
+                <button class="btn btn-primary" id="reconnectBtn" disabled>
+                    🔄 重新连接
+                </button>
+                <button class="clear-btn" id="clearBtn">
+                    🗑️ 清空聊天记录
+                </button>
+            </div>
         </div>
 
-        <div class="sensors-section">
-            <h2 class="section-title">实时传感器数据</h2>
-            <div class="sensor-data" id="sensorDataContainer">
-                <!-- 传感器数据卡片将在这里动态生成 -->
+        <div class="chat-container" id="chatContainer">
+            <div class="message system">
+                <div class="message-content">欢迎使用小智Node.js客户端！请先点击"连接服务器"按钮建立连接。</div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" class="message-input" id="messageInput" placeholder="输入消息..." disabled>
+            <button class="send-btn" id="sendBtn" disabled>
+                发送
+            </button>
+        </div>
+
+        <!-- RTN消息发送区域 -->
+        <div class="rtn-section" style="padding: 15px 20px; background: #fff3cd; border-top: 1px solid #ffeeba;">
+            <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 16px;">📡 RTN跨客户端消息</h3>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <select id="rtnClientSelect"
+                    style="flex: 1; min-width: 150px; padding: 8px 12px; border: 1px solid #ffc107; border-radius: 20px; font-size: 14px; background: white;">
+                    <option value="">请选择目标设备</option>
+                </select>
+                <input type="text" id="rtnDataInput" placeholder="消息内容"
+                    style="flex: 2; min-width: 200px; padding: 8px 12px; border: 1px solid #ffc107; border-radius: 20px; font-size: 14px;">
+                <button class="btn btn-warning" id="sendRtnBtn"
+                    style="background: linear-gradient(90deg, #ffc107 0%, #e0a800 100%); color: #212529; padding: 8px 15px; border: none; border-radius: 20px; cursor: pointer; font-size: 14px;"
+                    disabled>
+                    📤 发送RTN消息
+                </button>
+            </div>
+            <div style="margin-top: 8px; font-size: 12px; color: #856404;">
+                从下拉框选择目标设备，输入要发送的消息内容
+            </div>
+        </div>
+
+        <!-- 活跃设备列表区域 -->
+        <div class="devices-section" style="padding: 15px 20px; background: #d1ecf1; border-top: 1px solid #bee5eb;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0; color: #0c5460; font-size: 16px;">📱 活跃设备列表</h3>
+                <button class="btn btn-info" id="refreshDevicesBtn"
+                    style="background: linear-gradient(90deg, #17a2b8 0%, #138496 100%); color: white; padding: 6px 12px; border: none; border-radius: 15px; cursor: pointer; font-size: 12px;">
+                    🔄 刷新
+                </button>
+            </div>
+            <div id="devicesList"
+                style="min-height: 60px; max-height: 200px; overflow-y: auto; background: white; border-radius: 10px; padding: 10px; font-size: 13px; color: #495057;">
+                <div style="text-align: center; color: #6c757d; padding: 20px;">
+                    请先连接到服务器以查看活跃设备列表
+                </div>
             </div>
         </div>
     </div>
 
-    <script>
-        const API_BASE = 'http://localhost:3000/api';
-        let websocket = null;
-        let serverStartTime = null;
-
-        // 初始化
-        document.addEventListener('DOMContentLoaded', function() {
-            connectWebSocket();
-            loadDevices();
-            loadSensorData();
-            updateServerUptime();
-            
-            // 每5秒更新一次服务器运行时间
-            setInterval(updateServerUptime, 5000);
-            // 每10秒自动刷新数据
-            setInterval(() => {
-                loadDevices();
-                loadSensorData();
-            }, 10000);
-        });
-
-        // WebSocket连接
-        function connectWebSocket() {
-            const wsUrl = 'ws://localhost:3000';
-            websocket = new WebSocket(wsUrl);
-
-            websocket.onopen = function(event) {
-                console.log('WebSocket连接已建立');
-                updateWebSocketStatus(true);
-            };
-
-            websocket.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                console.log('收到WebSocket消息:', data);
-                
-                // 处理不同类型的消息
-                switch(data.type) {
-                    case 'sensor_update':
-                        updateSensorDisplay(data.data);
-                        break;
-                    case 'device_status':
-                        loadDevices(); // 重新加载设备列表
-                        break;
-                }
-            };
-
-            websocket.onclose = function(event) {
-                console.log('WebSocket连接已关闭');
-                updateWebSocketStatus(false);
-                // 5秒后尝试重连
-                setTimeout(connectWebSocket, 5000);
-            };
-
-            websocket.onerror = function(error) {
-                console.error('WebSocket错误:', error);
-                updateWebSocketStatus(false);
-            };
-        }
-
-        function updateWebSocketStatus(connected) {
-            const statusElement = document.getElementById('websocketStatus');
-            if (connected) {
-                statusElement.className = 'websocket-status status-connected';
-                statusElement.textContent = 'WebSocket连接状态: 已连接';
-            } else {
-                statusElement.className = 'websocket-status status-disconnected';
-                statusElement.textContent = 'WebSocket连接状态: 断开连接';
-            }
-        }
-
-        // 加载设备列表
-        async function loadDevices() {
-            try {
-                const response = await fetch(`${API_BASE}/devices`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    updateDeviceStats(data.stats || { total: data.count, online: data.devices.filter(d => d.status === 'online').length });
-                    renderDevicesTable(data.devices);
-                }
-            } catch (error) {
-                console.error('加载设备失败:', error);
-            }
-        }
-
-        // 更新设备统计
-        function updateDeviceStats(stats) {
-            document.getElementById('totalDevices').textContent = stats.total || 0;
-            document.getElementById('onlineDevices').textContent = stats.online || 0;
-        }
-
-        // 渲染设备表格
-        function renderDevicesTable(devices) {
-            const tbody = document.getElementById('devicesTableBody');
-            
-            if (devices.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">暂无设备</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = devices.map(device => `
-                <tr>
-                    <td>${device.deviceId || device.clientId}</td>
-                    <td>${device.deviceType}</td>
-                    <td>${device.ip}</td>
-                    <td class="${device.status === 'online' ? 'status-online' : 'status-offline'}">
-                        ${device.status === 'online' ? '在线' : '离线'}
-                    </td>
-                    <td>${device.battery ? device.battery + '%' : '--'}</td>
-                    <td>${device.signal ? device.signal + 'dB' : '--'}</td>
-                    <td>${formatTime(device.lastSeen)}</td>
-                    <td>
-                        <div class="controls">
-                            <button class="btn-primary" onclick="sendCommand('${device.clientId}', 'get_sensor_data')">获取数据</button>
-                            <button class="btn-success" onclick="sendCommand('${device.clientId}', 'led_on')">LED开</button>
-                            <button class="btn-danger" onclick="sendCommand('${device.clientId}', 'led_off')">LED关</button>
-                        </div>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        // 加载传感器数据
-        async function loadSensorData() {
-            try {
-                const response = await fetch(`${API_BASE}/sensors/realtime?limit=20`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    document.getElementById('sensorDataCount').textContent = data.count;
-                    renderSensorData(data.data);
-                }
-            } catch (error) {
-                console.error('加载传感器数据失败:', error);
-            }
-        }
-
-        // 渲染传感器数据
-        function renderSensorData(sensorData) {
-            const container = document.getElementById('sensorDataContainer');
-            
-            // 按传感器类型分组
-            const groupedData = {};
-            sensorData.forEach(item => {
-                if (!groupedData[item.sensorType]) {
-                    groupedData[item.sensorType] = [];
-                }
-                groupedData[item.sensorType].push(item);
-            });
-
-            // 生成HTML
-            container.innerHTML = Object.entries(groupedData).map(([sensorType, data]) => {
-                const latest = data[0]; // 最新的数据
-                return `
-                    <div class="sensor-card">
-                        <h3>${getSensorTypeName(sensorType)}</h3>
-                        <div class="sensor-value">${latest.value}</div>
-                        <div class="sensor-unit">${latest.unit || ''}</div>
-                        <div style="text-align: center; color: #666; font-size: 0.9em;">
-                            设备: ${latest.clientId.substring(0, 8)}...<br>
-                            时间: ${formatTime(latest.timestamp)}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // 更新单个传感器显示
-        function updateSensorDisplay(sensorData) {
-            // 这里可以实现实时更新特定传感器的显示
-            loadSensorData(); // 简单起见，重新加载所有数据
-        }
-
-        // 发送命令到设备
-        async function sendCommand(clientId, command) {
-            try {
-                const response = await fetch(`${API_BASE}/devices/${clientId}/command`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ command })
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    alert(`命令已发送: ${command}`);
-                } else {
-                    alert(`命令发送失败: ${result.error}`);
-                }
-            } catch (error) {
-                console.error('发送命令失败:', error);
-                alert('发送命令失败');
-            }
-        }
-
-        // 更新服务器运行时间
-        async function updateServerUptime() {
-            try {
-                const response = await fetch('http://localhost:3000/health');
-                const data = await response.json();
-                
-                if (!serverStartTime) {
-                    serverStartTime = new Date(Date.now() - data.uptime * 1000);
-                }
-                
-                const uptime = Math.floor(data.uptime);
-                const hours = Math.floor(uptime / 3600);
-                const minutes = Math.floor((uptime % 3600) / 60);
-                const seconds = uptime % 60;
-                
-                document.getElementById('serverUptime').textContent = 
-                    `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            } catch (error) {
-                console.error('获取服务器状态失败:', error);
-            }
-        }
-
-        // 工具函数
-        function formatTime(timestamp) {
-            const date = new Date(timestamp);
-            return date.toLocaleString('zh-CN');
-        }
-
-        function getSensorTypeName(type) {
-            const names = {
-                'temperature': '温度',
-                'humidity': '湿度',
-                'pressure': '气压',
-                'light': '光照',
-                'motion': '运动检测'
-            };
-            return names[type] || type;
-        }
-    </script>
+    <script src="script.js"></script>
 </body>
+
 </html>

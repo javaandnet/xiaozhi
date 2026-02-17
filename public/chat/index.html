@@ -1,404 +1,381 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小智Node.js客户端</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
+    <title>小智服务器测试页面</title>
+    <link rel="stylesheet" href="css/test_page.css?v=0205">
+    <script>
+        // 检测是否使用file://协议打开
+        if (window.location.protocol === 'file:') {
+            document.addEventListener('DOMContentLoaded', function () {
+                // 创建背景模糊遮罩
+                const overlayDiv = document.createElement('div');
+                overlayDiv.className = 'file-protocol-overlay';
+                document.body.appendChild(overlayDiv);
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
+                // 创建警告框
+                const warningDiv = document.createElement('div');
+                warningDiv.id = 'fileProtocolWarning';
+                warningDiv.innerHTML = `
+                    <h2>⚠️ 警告：请使用HTTP服务器打开此页面</h2>
+                    <p>您当前使用的是本地文件方式打开页面（file://协议），这可能导致页面功能异常。</p>
+                    <p>您可以使用nginx映射启动测试页面，也可以请按照以下步骤使用python启动测试http服务：</p>
+                    <ol>
+                        <li>打开命令行终端</li>
+                        <li>命令行进入到 xiaozhi-server/test 目录</li>
+                        <li>执行以下命令启动HTTP服务器：</li>
+                    </ol>
+                    <pre>python -m http.server 8006</pre>
+                    <p>然后在浏览器中访问：<strong>http://localhost:8006/test_page.html</strong></p>
+                `;
+                document.body.appendChild(warningDiv);
+            });
         }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            overflow: hidden;
-        }
-
-        .header {
-            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            padding: 20px;
-            text-align: center;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
-        }
-
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
-        }
-
-        .connection-status {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 10px;
-            font-size: 14px;
-        }
-
-        .status-indicator {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background-color: #ff4757;
-        }
-
-        .status-indicator.connected {
-            background-color: #2ed573;
-        }
-
-        .controls {
-            padding: 20px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e9ecef;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        
-        .server-config {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        
-        .config-label {
-            font-weight: 500;
-            color: #495057;
-            white-space: nowrap;
-        }
-        
-        .server-input {
-            flex: 1;
-            min-width: 250px;
-            padding: 8px 12px;
-            border: 2px solid #dee2e6;
-            border-radius: 20px;
-            font-size: 14px;
-            transition: border-color 0.3s ease;
-        }
-        
-        .server-input:focus {
-            outline: none;
-            border-color: #4facfe;
-            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
-        }
-        
-        .connection-buttons {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-        }
-
-        .btn-success {
-            background: linear-gradient(90deg, #2ed573 0%, #1dd1a1 100%);
-            color: white;
-        }
-
-        .btn-danger {
-            background: linear-gradient(90deg, #ff4757 0%, #ff6b81 100%);
-            color: white;
-        }
-        
-        .btn-secondary {
-            background: linear-gradient(90deg, #6c757d 0%, #5a6268 100%);
-            color: white;
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        }
-
-        .chat-container {
-            height: 400px;
-            overflow-y: auto;
-            padding: 20px;
-            background: #ffffff;
-        }
-
-        .message {
-            margin-bottom: 15px;
-            padding: 12px 16px;
-            border-radius: 18px;
-            max-width: 80%;
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .message.user {
-            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            margin-left: auto;
-            border-bottom-right-radius: 5px;
-        }
-
-        .message.bot {
-            background: #f1f2f6;
-            color: #2f3542;
-            margin-right: auto;
-            border-bottom-left-radius: 5px;
-        }
-
-        .message.system {
-            background: #ffd32a;
-            color: #2f3542;
-            text-align: center;
-            margin: 10px auto;
-            max-width: 60%;
-            font-size: 13px;
-        }
-
-        .message-header {
-            font-size: 12px;
-            opacity: 0.8;
-            margin-bottom: 5px;
-        }
-
-        .message-content {
-            line-height: 1.5;
-        }
-
-        .input-area {
-            padding: 20px;
-            background: white;
-            border-top: 1px solid #e9ecef;
-            display: flex;
-            gap: 10px;
-        }
-
-        .message-input {
-            flex: 1;
-            padding: 12px 20px;
-            border: 2px solid #e9ecef;
-            border-radius: 25px;
-            font-size: 16px;
-            outline: none;
-            transition: border-color 0.3s ease;
-        }
-
-        .message-input:focus {
-            border-color: #4facfe;
-        }
-
-        .send-btn {
-            padding: 12px 25px;
-            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-
-        .send-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
-        }
-
-        .send-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .info-panel {
-            padding: 15px 20px;
-            background: #e8f4f8;
-            border-top: 1px solid #bee5eb;
-            font-size: 13px;
-            color: #0c5460;
-        }
-
-        .info-item {
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .info-label {
-            font-weight: 500;
-        }
-
-        .clear-btn {
-            background: #ffa502;
-            color: white;
-            padding: 8px 15px;
-            border: none;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 12px;
-            margin-left: 10px;
-        }
-
-        .clear-btn:hover {
-            background: #ff8c00;
-        }
-
-        /* 滚动条样式 */
-        .chat-container::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .chat-container::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 3px;
-        }
-
-        .chat-container::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 3px;
-        }
-
-        .chat-container::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
-        }
-    </style>
+    </script>
 </head>
+
 <body>
+    <!-- 背景容器 -->
+    <div class="background-container" id="backgroundContainer">
+        <div class="background-overlay"></div>
+    </div>
+
+    <!-- 移动端权限提示 -->
+    <div id="mobilePermissionTip"
+        style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); color: white; padding: 20px; border-radius: 12px; z-index: 10000; text-align: center; max-width: 80%;">
+        <p style="margin: 0 0 15px 0; font-size: 16px;">请点击"拨号"按钮以启用语音功能</p>
+        <p style="margin: 0; font-size: 14px; color: #aaa;">需要麦克风权限进行语音对话</p>
+    </div>
+
+    <!-- 主容器 -->
     <div class="container">
-        <div class="header">
-            <h1>🤖 小智Node.js客户端</h1>
-            <p>通过WebSocket与小智服务器进行智能对话</p>
-            <div class="connection-status">
-                <div class="status-indicator" id="statusIndicator"></div>
-                <span id="statusText">未连接</span>
+
+        <!-- 摄像头切换按钮 -->
+        <div class="camera-switch" id="cameraSwitch">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path
+                    d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15V18M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z" />
+            </svg>
+        </div>
+
+        <!-- 摄像头显示区域（可拖动） -->
+        <div class="camera-container" id="cameraContainer">
+            <video id="cameraVideo" autoplay playsinline muted></video>
+        </div>
+
+        <!-- 连接状态指示器 - 页面顶部中部 -->
+        <div class="connection-status-top">
+            <div class="status-indicator">
+                <span class="status-dot status-disconnected"></span>
+                <span id="connectionStatus">离线</span>
             </div>
         </div>
 
-        <div class="controls">
-            <div class="server-config">
-                <label for="serverUrlInput" class="config-label">服务器地址:</label>
-                <input type="text" id="serverUrlInput" class="server-input" 
-                       value="ws://192.168.1.55:8000/xiaozhi/v1/" 
-                       placeholder="输入WebSocket服务器地址">
-                <button class="btn btn-secondary" id="saveServerBtn">
-                    💾 保存
-                </button>
-            </div>
-            <div class="connection-buttons">
-                <button class="btn btn-success" id="connectBtn">
-                    🔗 连接服务器
-                </button>
-                <button class="btn btn-danger" id="disconnectBtn" disabled>
-                    🔌 断开连接
-                </button>
-                <button class="btn btn-primary" id="reconnectBtn" disabled>
-                    🔄 重新连接
-                </button>
-                <button class="clear-btn" id="clearBtn">
-                    🗑️ 清空聊天记录
-                </button>
+
+
+        <!-- 模型加载提示 -->
+        <div class="model-container">
+            <div class="model-loading" id="modelLoading">
+                <div class="loading-char-float">
+                    <div class="main-char">
+                        <span>模</span><span>型</span><span>加</span><span>载</span><span>中</span><span>✨</span>
+                    </div>
+                    <div class="shadow-char">模型加载中✨</div>
+                </div>
             </div>
         </div>
 
-        <div class="chat-container" id="chatContainer">
-            <div class="message system">
-                <div class="message-content">欢迎使用小智Node.js客户端！请先点击"连接服务器"按钮建立连接。</div>
+        <!-- Live2D Canvas 容器 -->
+        <canvas id="live2d-stage"></canvas>
+
+        <!-- 聊天消息流（弹幕样式） -->
+        <div class="chat-container">
+            <div class="chat-stream" id="chatStream">
+                <!-- 聊天消息将动态插入这里 -->
             </div>
         </div>
 
-        <div class="input-area">
-            <input type="text" class="message-input" id="messageInput" placeholder="输入消息..." disabled>
-            <button class="send-btn" id="sendBtn" disabled>
-                发送
-            </button>
-        </div>
-        
-        <!-- RTN消息发送区域 -->
-        <div class="rtn-section" style="padding: 15px 20px; background: #fff3cd; border-top: 1px solid #ffeeba;">
-            <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 16px;">📡 RTN跨客户端消息</h3>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <select id="rtnClientSelect" style="flex: 1; min-width: 150px; padding: 8px 12px; border: 1px solid #ffc107; border-radius: 20px; font-size: 14px; background: white;">
-                    <option value="">请选择目标设备</option>
-                </select>
-                <input type="text" id="rtnDataInput" placeholder="消息内容" style="flex: 2; min-width: 200px; padding: 8px 12px; border: 1px solid #ffc107; border-radius: 20px; font-size: 14px;">
-                <button class="btn btn-warning" id="sendRtnBtn" style="background: linear-gradient(90deg, #ffc107 0%, #e0a800 100%); color: #212529; padding: 8px 15px; border: none; border-radius: 20px; cursor: pointer; font-size: 14px;" disabled>
-                    📤 发送RTN消息
+        <!-- 底部输入框和控制栏 -->
+        <div class="bottom-controls">
+            <div class="chat-input-bar">
+                <input type="text" id="messageInput" autocomplete="off" placeholder="输入消息，按Enter发送">
+                <button class="control-btn" id="settingsBtn" title="设置">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5A3.5 3.5 0 0 1 15.5 12A3.5 3.5 0 0 1 12 15.5M19.43 12.97C19.47 12.65 19.5 12.33 19.5 12C19.5 11.67 19.47 11.34 19.43 11L21.54 9.37C21.73 9.22 21.78 8.95 21.66 8.73L19.66 5.27C19.54 5.05 19.27 4.96 19.05 5.05L16.56 6.05C16.04 5.66 15.5 5.32 14.87 5.07L14.5 2.42C14.46 2.18 14.25 2 14 2H10C9.75 2 9.54 2.18 9.5 2.42L9.13 5.07C8.5 5.32 7.96 5.66 7.44 6.05L4.95 5.05C4.73 4.96 4.46 5.05 4.34 5.27L2.34 8.73C2.22 8.95 2.27 9.22 2.46 9.37L4.57 11C4.53 11.34 4.5 11.67 4.5 12C4.5 12.33 4.53 12.65 4.57 12.97L2.46 14.63C2.27 14.78 2.22 15.05 2.34 15.27L4.34 18.73C4.46 18.95 4.73 19.03 4.95 18.95L7.44 17.94C7.96 18.34 8.5 18.68 9.13 18.93L9.5 21.58C9.54 21.82 9.75 22 10 22H14C14.25 22 14.46 21.82 14.5 21.58L14.87 18.93C15.5 18.68 16.04 18.34 16.56 17.94L19.05 18.95C19.27 19.03 19.54 18.95 19.66 18.73L21.66 15.27C21.78 15.05 21.73 14.78 21.54 14.63L19.43 12.97Z" />
+                    </svg>
+                </button>
+                <button class="control-btn" id="cameraBtn" title="请先连接服务器" disabled>
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M17,10.5V7A1,1 0 0,0 16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5Z" />
+                    </svg>
+                </button>
+                <button class="control-btn dial-btn" id="dialBtn" title="拨号">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M6.62,10.79C8.06,13.62 10.38,15.94 13.21,17.38L15.41,15.18C15.69,14.9 16.08,14.82 16.43,14.93C17.55,15.3 18.75,15.5 20,15.5A1,1 0 0,1 21,16.5V20A1,1 0 0,1 20,21A17,17 0 0,1 3,4A1,1 0 0,1 4,3H7.5A1,1 0 0,1 8.5,4C8.5,5.25 8.7,6.45 9.07,7.57C9.18,7.92 9.1,8.31 8.82,8.59L6.62,10.79Z" />
+                    </svg>
+                </button>
+                <button class="control-btn" id="recordBtn" title="开始录音" disabled>
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z" />
+                    </svg>
                 </button>
             </div>
-            <div style="margin-top: 8px; font-size: 12px; color: #856404;">
-                从下拉框选择目标设备，输入要发送的消息内容
-            </div>
         </div>
-        
-        <!-- 活跃设备列表区域 -->
-        <div class="devices-section" style="padding: 15px 20px; background: #d1ecf1; border-top: 1px solid #bee5eb;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin: 0; color: #0c5460; font-size: 16px;">📱 活跃设备列表</h3>
-                <button class="btn btn-info" id="refreshDevicesBtn" style="background: linear-gradient(90deg, #17a2b8 0%, #138496 100%); color: white; padding: 6px 12px; border: none; border-radius: 15px; cursor: pointer; font-size: 12px;">
-                    🔄 刷新
-                </button>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content settings-modal">
+            <div class="modal-header">
+                <h2>设置</h2>
+                <button class="close-btn" id="closeSettingsBtn">&times;</button>
             </div>
-            <div id="devicesList" style="min-height: 60px; max-height: 200px; overflow-y: auto; background: white; border-radius: 10px; padding: 10px; font-size: 13px; color: #495057;">
-                <div style="text-align: center; color: #6c757d; padding: 20px;">
-                    请先连接到服务器以查看活跃设备列表
+            <div class="modal-body">
+                <div class="settings-tabs">
+                    <button class="tab-btn active" data-tab="device">设备配置</button>
+                    <button class="tab-btn" data-tab="mcp">MCP工具</button>
+                    <button class="tab-btn" data-tab="other">数字人皮肤</button>
+                </div>
+
+                <div class="tab-content active" id="deviceTab">
+                    <!-- 设备配置面板 -->
+                    <div class="config-panel">
+                        <div class="control-panel">
+                            <div class="config-row">
+                                <div class="config-item">
+                                    <label for="deviceMac">设备MAC:</label>
+                                    <input type="text" id="deviceMac" placeholder="device-id">
+                                </div>
+                            </div>
+                            <div class="config-row">
+                                <div class="config-item">
+                                    <label for="clientId">客户端ID:</label>
+                                    <input type="text" id="clientId" value="web_test_client" placeholder="client-id">
+                                </div>
+                                <div class="config-item">
+                                    <label for="deviceName">设备名称:</label>
+                                    <input type="text" id="deviceName" value="Web测试设备" maxlength="50"
+                                        placeholder="deviceName">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 连接信息面板 -->
+                    <div class="connection-controls">
+                        <div class="input-group">
+                            <label for="otaUrl">OTA服务器地址:</label>
+                            <input type="text" id="otaUrl" value="http://192.168.1.55:9999/xiaozhi/ota/"
+                                placeholder="OTA服务器地址，如：http://192.168.1.55:8002/xiaozhi/ota/" />
+                        </div>
+                        <div class="input-group">
+                            <label for="serverUrl">WebSocket服务器地址:</label>
+                            <input type="text" id="serverUrl" value="" readonly disabled
+                                placeholder="填写OTA地址后，点击拨号按钮自动连接" />
+                        </div>
+                        <div class="input-group">
+                            <label for="visionUrl">视觉分析地址:</label>
+                            <input type="text" id="visionUrl" value="" readonly disabled placeholder="成功建立ws连接后自动获取" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="mcpTab">
+                    <!-- MCP 工具管理区域 -->
+                    <div class="mcp-tools-container">
+                        <div class="mcp-tools-header">
+                            <h3>MCP 工具管理</h3>
+                        </div>
+                        <div class="mcp-tools-panel" id="mcpToolsPanel">
+                            <div class="mcp-tools-list" id="mcpToolsContainer">
+                                <!-- 工具列表将动态插入这里 -->
+                            </div>
+                            <div class="mcp-actions">
+                                <button class="btn-primary" id="addMcpToolBtn">
+                                    ➕ 添加新工具
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="otherTab">
+                    <div class="other-settings-panel">
+                        <div class="control-panel">
+                            <div class="config-row">
+                                <div class="config-item">
+                                    <label>选择模型:</label>
+                                    <select id="live2dModelSelect" class="model-select">
+                                        <option value="hiyori_pro_zh">hiyori (春日)</option>
+                                        <option value="natori_pro_zh">natori (名取)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="config-row">
+                                <div class="config-item">
+                                    <label></label>
+                                    <button class="background-btn" id="backgroundBtn" title="切换背景">
+                                        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                                            <path
+                                                d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15V18M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z" />
+                                        </svg>
+                                        <span class="btn-text">切换背景</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <!-- MCP 工具编辑模态框 -->
+    <div id="mcpToolModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="mcpModalTitle">添加工具</h2>
+                <button class="close-btn" id="closeMcpModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="mcpErrorContainer"></div>
+                <form id="mcpToolForm">
+                    <div class="input-group">
+                        <label for="mcpToolName">工具名称 *</label>
+                        <input type="text" id="mcpToolName" placeholder="例如: self.get_device_status" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="mcpToolDescription">工具描述 *</label>
+                        <textarea id="mcpToolDescription" placeholder="详细描述工具的功能和使用场景..." required></textarea>
+                    </div>
+                    <div class="input-group">
+                        <div class="input-group-header">
+                            <label>输入参数</label>
+                            <button type="button" class="properties-btn-primary" id="addMcpPropertyBtn">
+                                ➕ 添加参数
+                            </button>
+                        </div>
+                        <div class="properties-container">
+                            <div class="mcp-empty-state" id="mcpEmptyState">
+                                暂无参数，点击上方按钮添加参数
+                            </div>
+                            <div class="mcp-properties-list" id="mcpPropertiesContainer">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="mcpMockResponse">
+                            模拟返回结果 (JSON 格式，可选)
+                            <span style="font-size: 12px; color: #999; font-weight: normal;">- 留空则返回默认成功消息</span>
+                        </label>
+                        <textarea id="mcpMockResponse" placeholder='{"success": true, "data": "执行成功"}'></textarea>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary" id="cancelMcpBtn">取消</button>
+                        <button type="submit" class="btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 参数编辑模态框 -->
+    <div id="mcpPropertyModal" class="modal">
+        <div class="modal-content property-modal">
+            <div class="modal-header">
+                <h2 id="mcpPropertyModalTitle">编辑参数</h2>
+                <button class="close-btn" id="closeMcpPropertyModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="mcpPropertyForm">
+                    <input type="hidden" id="mcpPropertyIndex" value="-1">
+                    <div class="input-group">
+                        <label for="mcpPropertyName">参数名称 *</label>
+                        <input type="text" id="mcpPropertyName" placeholder="例如: param_1" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="mcpPropertyType">数据类型 *</label>
+                        <select id="mcpPropertyType" class="model-select" required>
+                            <option value="string">字符串</option>
+                            <option value="integer">整数</option>
+                            <option value="number">数字</option>
+                            <option value="boolean">布尔值</option>
+                            <option value="array">数组</option>
+                            <option value="object">对象</option>
+                        </select>
+                    </div>
+                    <div class="input-group" id="mcpPropertyRangeGroup" style="display: none;">
+                        <div class="config-row">
+                            <div class="config-item">
+                                <label for="mcpPropertyMinimum">最小值</label>
+                                <input type="number" id="mcpPropertyMinimum" placeholder="可选">
+                            </div>
+                            <div class="config-item">
+                                <label for="mcpPropertyMaximum">最大值</label>
+                                <input type="number" id="mcpPropertyMaximum" placeholder="可选">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="mcpPropertyDescription">参数描述</label>
+                        <input type="text" id="mcpPropertyDescription" placeholder="可选">
+                    </div>
+                    <div class="input-group">
+                        <label class="mcp-checkbox-label">
+                            <input type="checkbox" id="mcpPropertyRequired">
+                            必填参数
+                        </label>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary" id="cancelMcpPropertyBtn">取消</button>
+                        <button type="submit" class="btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 背景加载 -->
+    <script src="js/ui/background-load.js?v=0205"></script>
+
+    <!-- PIXI.js 2D渲染引擎 -->
+    <script src="js/live2d/pixi.js?v=0205"></script>
+
+    <!-- Live2D Cubism 4.0 SDK -->
+    <script src="js/live2d/live2dcubismcore.min.js?v=0205"></script>
+    <script src="js/live2d/cubism4.min.js?v=0205"></script>
+
+    <!-- Live2D 管理器 -->
+    <script src="js/live2d/live2d.js?v=0205"></script>
+
+    <!-- Opus解码库 -->
+    <script src="js/utils/libopus.js?v=0205"></script>
+
+    <!-- 主应用入口 -->
+    <script type="module" src="js/app.js?v=0205"></script>
+
+    <!-- 全局错误处理 -->
+    <script>
+        // 添加全局错误处理
+        window.addEventListener('error', function (event) {
+            console.error('全局错误:', event.error);
+        });
+
+        // 添加未处理的Promise拒绝处理
+        window.addEventListener('unhandledrejection', function (event) {
+            console.error('未处理的Promise拒绝:', event.reason);
+        });
+    </script>
 </body>
+
 </html>

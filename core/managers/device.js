@@ -1,5 +1,5 @@
-import DeviceModel from '../models/device.js';
 import { logger } from '../../utils/logger.js';
+import DeviceModel from '../models/device.js';
 
 class DeviceManager {
   constructor() {
@@ -22,7 +22,7 @@ class DeviceManager {
       }
 
       const device = new DeviceModel(deviceData);
-      
+
       // 检查是否已存在
       if (this.devices.has(device.clientId)) {
         logger.warn(`设备已存在，更新信息: ${device.clientId}`);
@@ -31,7 +31,7 @@ class DeviceManager {
 
       this.devices.set(device.clientId, device);
       this.deviceLookup.set(device.deviceId, device.clientId);
-      
+
       logger.info(`设备添加成功: ${device.deviceId} (${device.clientId})`);
       return device;
     } catch (error) {
@@ -119,7 +119,7 @@ class DeviceManager {
   getStats() {
     const allDevices = this.getAllDevices();
     const onlineDevices = this.getOnlineDevices();
-    
+
     const typeStats = {};
     allDevices.forEach(device => {
       const type = device.type || 'unknown';
@@ -141,7 +141,7 @@ class DeviceManager {
     let devices = this.getAllDevices();
 
     if (deviceId) {
-      devices = devices.filter(d => 
+      devices = devices.filter(d =>
         d.deviceId.toLowerCase().includes(deviceId.toLowerCase())
       );
     }
@@ -183,6 +183,58 @@ class DeviceManager {
     }
 
     return results;
+  }
+
+  // 获取在线设备统计信息
+  getOnlineStats() {
+    const allDevices = this.getAllDevices();
+    const onlineDevices = this.getOnlineDevices();
+
+    return {
+      total: allDevices.length,
+      online: onlineDevices.length,
+      offline: allDevices.length - onlineDevices.length
+    };
+  }
+
+  // 获取最近活跃的设备
+  getRecentActiveDevices(limit = 10) {
+    const allDevices = this.getAllDevices();
+    return allDevices
+      .sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen))
+      .slice(0, limit);
+  }
+
+  // 导出设备数据
+  exportDeviceData() {
+    return this.getAllDevices().map(device => ({
+      clientId: device.clientId,
+      deviceId: device.deviceId,
+      deviceType: device.type,
+      ip: device.ip,
+      status: device.status,
+      battery: device.battery,
+      signal: device.signal,
+      connectedAt: device.connectedAt,
+      lastSeen: device.lastSeen,
+      capabilities: device.capabilities
+    }));
+  }
+
+  // 获取传感器数据（占位实现）
+  getSensorData(options = {}) {
+    const { clientId, sensorType, limit = 50, startTime, endTime } = options;
+    // 目前设备管理器不存储传感器数据，返回空数组
+    // 如需完整功能，应集成独立的传感器数据存储
+    logger.debug('getSensorData called, returning empty array (not implemented)');
+    return [];
+  }
+
+  // 获取特定设备的传感器数据（占位实现）
+  getDeviceSensorData(clientId, sensorType, limit = 50) {
+    // 目前设备管理器不存储传感器数据，返回空数组
+    logger.debug('getDeviceSensorData called, returning empty array (not implemented)');
+    return [];
   }
 }
 
