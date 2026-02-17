@@ -376,24 +376,29 @@
             </button>
         </div>
 
-        <!-- RTN消息发送区域 -->
-        <div class="rtn-section" style="padding: 15px 20px; background: #fff3cd; border-top: 1px solid #ffeeba;">
-            <h3 style="margin: 0 0 10px 0; color: #856404; font-size: 16px;">📡 RTN跨客户端消息</h3>
+        <!-- 好友消息测试区域 -->
+        <div class="friend-section" style="padding: 15px 20px; background: #d4edda; border-top: 1px solid #c3e6cb;">
+            <h3 style="margin: 0 0 10px 0; color: #155724; font-size: 16px;">👥 好友消息测试 (客户端间通信)</h3>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <select id="rtnClientSelect"
-                    style="flex: 1; min-width: 150px; padding: 8px 12px; border: 1px solid #ffc107; border-radius: 20px; font-size: 14px; background: white;">
-                    <option value="">请选择目标设备</option>
+                <select id="friendClientSelect"
+                    style="flex: 1; min-width: 150px; padding: 8px 12px; border: 1px solid #28a745; border-radius: 20px; font-size: 14px; background: white;">
+                    <option value="">请选择目标客户端</option>
                 </select>
-                <input type="text" id="rtnDataInput" placeholder="消息内容"
-                    style="flex: 2; min-width: 200px; padding: 8px 12px; border: 1px solid #ffc107; border-radius: 20px; font-size: 14px;">
-                <button class="btn btn-warning" id="sendRtnBtn"
-                    style="background: linear-gradient(90deg, #ffc107 0%, #e0a800 100%); color: #212529; padding: 8px 15px; border: none; border-radius: 20px; cursor: pointer; font-size: 14px;"
+                <input type="text" id="friendDataInput" placeholder="好友消息内容"
+                    style="flex: 2; min-width: 200px; padding: 8px 12px; border: 1px solid #28a745; border-radius: 20px; font-size: 14px;">
+                <button class="btn btn-success" id="sendFriendBtn"
+                    style="background: linear-gradient(90deg, #28a745 0%, #218838 100%); color: white; padding: 8px 15px; border: none; border-radius: 20px; cursor: pointer; font-size: 14px;"
                     disabled>
-                    📤 发送RTN消息
+                    💌 发送好友消息
                 </button>
             </div>
-            <div style="margin-top: 8px; font-size: 12px; color: #856404;">
-                从下拉框选择目标设备，输入要发送的消息内容
+            <div style="margin-top: 8px; font-size: 12px; color: #155724;">
+                选择目标客户端发送好友消息，测试客户端间直接通信功能
+            </div>
+            <div id="friendMessages"
+                style="margin-top: 15px; max-height: 150px; overflow-y: auto; background: white; border-radius: 10px; padding: 10px; font-size: 13px; color: #495057; display: none;">
+                <div style="font-weight: bold; margin-bottom: 8px; color: #155724;">📩 好友消息记录:</div>
+                <div id="friendMessagesList"></div>
             </div>
         </div>
 

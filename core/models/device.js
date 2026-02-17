@@ -17,6 +17,8 @@ class DeviceModel extends BaseModel {
     this.signal = data.signal || null;
     this.location = data.location || null;
     this.metadata = data.metadata || {};
+    // 保持WebSocket连接引用
+    this.connection = data.connection || null;
   }
 
   toJSON() {
