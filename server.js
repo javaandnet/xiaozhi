@@ -130,8 +130,23 @@ app.get('/health', (req, res) => {
   });
 });
 
-// 主页
+// 主页 - 重定向到管理页面
 app.get('/', (req, res) => {
+  res.redirect('/chat/index.html');
+});
+
+// 聊天客户端路由
+app.get('/chat', (req, res) => {
+  res.redirect('/chat/index.html');
+});
+
+// 管理页面路由
+app.get('/manage', (req, res) => {
+  res.redirect('/manage/index.html');
+});
+
+// API信息端点
+app.get('/api', (req, res) => {
   res.json({
     message: '欢迎使用小智物联网后台服务器',
     version: '1.0.0',
@@ -140,7 +155,9 @@ app.get('/', (req, res) => {
       sensors: '/api/sensors',
       websocket: 'ws://localhost:' + PORT,
       ota: '/xiaozhi/ota/',
-      health: '/health'
+      health: '/health',
+      chat: '/chat',
+      manage: '/manage'
     }
   });
 });
