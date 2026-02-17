@@ -47,6 +47,8 @@ class App {
         await this.audioPlayer.start();
         // 初始化MCP工具
         initMcpTools();
+        // 页面初始化时请求麦克风权限
+        await this.requestMicrophonePermission();
         // 检查麦克风可用性
         await this.checkMicrophoneAvailability();
         // 检查摄像头可用性
@@ -58,6 +60,40 @@ class App {
         // 关闭加载loading
         this.setModelLoadingStatus(false);
         log('应用初始化完成', 'success');
+    }
+
+    /**
+     * 页面初始化时请求麦克风权限
+     * 在页面加载时主动请求麦克风权限，提升用户体验
+     */
+    async requestMicrophonePermission() {
+        try {
+            // 检查浏览器是否支持 getUserMedia API
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                log('浏览器不支持getUserMedia API', 'warning');
+                return false;
+            }
+
+            log('正在请求麦克风权限...', 'info');
+
+            // 请求麦克风权限（但不保存stream，仅仅是请求权限）
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    sampleRate: 16000,
+                    channelCount: 1
+                }
+            });
+
+            // 立即停止所有轨道以释放麦克风
+            stream.getTracks().forEach(track => track.stop());
+            log('麦克风权限请求成功', 'success');
+            return true;
+        } catch (error) {
+            log(`麦克风权限请求失败: ${error.message}`, 'warning');
+            return false;
+        }
     }
 
     /**
