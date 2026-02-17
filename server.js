@@ -73,21 +73,20 @@ const sessionManager = new SessionManager();
 (async () => {
   try {
     await llmService.initialize();
-    console.log('✅ LLM服务初始化成功');
+    // console.log('✅ LLM服务初始化成功');
   } catch (error) {
     console.error('❌ LLM服务初始化失败:', error.message);
   }
 
   try {
     await ttsService.initialize();
-    console.log('✅ TTS服务初始化成功');
+    // console.log('✅ TTS服务初始化成功');
   } catch (error) {
     console.error('❌ TTS服务初始化失败:', error.message);
   }
 
   try {
     await sttService.initialize();
-    console.log('✅ STT服务初始化成功');
   } catch (error) {
     console.error('❌ STT服务初始化失败:', error.message);
   }

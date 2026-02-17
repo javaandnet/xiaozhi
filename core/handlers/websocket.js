@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger.js';
 import DeviceManager from '../managers/device.js';
@@ -175,6 +177,23 @@ class WebSocketHandler {
   async handleBinaryData(ws, data) {
     logger.debug(`收到二进制音频数据: ${data.length} bytes (${ws.clientId})`);
 
+    // 特殊处理：空帧表示录音结束
+    if (data.length === 0) {
+      logger.info(`📥 收到空帧，录音结束信号`);
+      const sessionId = ws.sessionId;
+      if (sessionId && this.sttService) {
+        const sttSession = this.sttService.getSession(sessionId);
+        const bufferCount = sttSession?.audioBuffer?.length || 0;
+        logger.info(`📥 空帧触发识别: sessionId=${sessionId}, 缓冲帧数=${bufferCount}`);
+        if (bufferCount >= 15) {
+          await this._triggerSttRecognition(ws, sessionId);
+        } else {
+          logger.warn(`音频数据不足(${bufferCount}帧)，跳过识别`);
+        }
+      }
+      return;
+    }
+
     if (!this.sttService) {
       logger.warn(`STT服务未初始化，无法处理音频数据`);
       return;
@@ -195,6 +214,9 @@ class WebSocketHandler {
       if (hasVoice && ws.clientIsSpeaking && ws.clientListenMode !== 'manual') {
         await this._handleAbort(ws);
       }
+
+      // 设备长时间空闲检测，用于say goodbye（参照Python: no_voice_close_connect）
+      await this._checkIdleTimeout(ws, hasVoice);
 
       // 确保会话存在
       let sessionId = ws.sessionId;
@@ -223,20 +245,20 @@ class WebSocketHandler {
       // 如果之前有声音，现在没有声音，且静默时间超过阈值，则触发识别
       const SILENCE_THRESHOLD_MS = 500; // 静默阈值500ms
       const now = Date.now();
-      
+
       // 更新语音窗口
       ws.clientVoiceWindow = ws.clientVoiceWindow || [];
       ws.clientVoiceWindow.push(hasVoice);
       if (ws.clientVoiceWindow.length > 10) {
         ws.clientVoiceWindow = ws.clientVoiceWindow.slice(-10);
       }
-      
+
       // 判断当前是否有声音（窗口内超过一半帧有声音）
       const voiceFrameCount = ws.clientVoiceWindow.filter(v => v).length;
       const clientHaveVoice = voiceFrameCount >= 5;
-      
+
       logger.debug(`VAD窗口: ${voiceFrameCount}/10 帧有声音, 当前状态: ${clientHaveVoice ? '有声音' : '静默'}, 之前状态: ${ws.clientHaveVoice ? '有声音' : '静默'}`);
-      
+
       // 如果之前有声音，现在没有声音，且静默时间超过阈值
       if (ws.clientHaveVoice && !clientHaveVoice) {
         const silenceDuration = now - (ws.lastVoiceTime || now);
@@ -246,7 +268,16 @@ class WebSocketHandler {
           ws.clientVoiceStop = true;
         }
       }
-      
+
+      // 如果收到空帧且之前有声音，也触发识别
+      if (ws.clientHaveVoice) {
+        const silenceDuration = now - (ws.lastVoiceTime || now);
+        if (silenceDuration >= 200) { // 200ms无有效数据
+          logger.info(`✅ 收到空帧，触发识别 (静默: ${silenceDuration}ms)`);
+          ws.clientVoiceStop = true;
+        }
+      }
+
       // 更新状态
       if (clientHaveVoice) {
         ws.clientHaveVoice = true;
@@ -319,6 +350,9 @@ class WebSocketHandler {
       case 'listen':
         const { state: listenState, mode, text: listenText } = payload;
 
+        // 调试日志 - 打印完整的listen消息
+        logger.info(`收到listen消息 [${ws.clientId}]: state=${listenState}, mode=${mode}, payload=${JSON.stringify(payload)}`);
+
         // 设置监听模式
         if (mode) {
           ws.clientListenMode = mode;
@@ -330,7 +364,7 @@ class WebSocketHandler {
           return;
         }
 
-        console.log(`监听状态更新 [${ws.clientId}]: ${listenState}`);
+        logger.info(`监听状态更新 [${ws.clientId}]: ${listenState}`);
 
         // 处理不同的监听状态
         if (listenState === 'start') {
@@ -342,6 +376,7 @@ class WebSocketHandler {
           }
         } else if (listenState === 'stop') {
           // 停止监听，触发语音识别
+          logger.info(`🔴 收到手动停止消息，准备触发语音识别`);
           ws.clientVoiceStop = true;
 
           // 确保会话存在
@@ -353,6 +388,7 @@ class WebSocketHandler {
             });
             sessionId = sessionResult.sessionId;
             ws.sessionId = sessionId;
+            logger.info(`手动创建会话: ${sessionId}`);
           }
 
           // 触发语音识别
@@ -360,8 +396,15 @@ class WebSocketHandler {
             // 设置语音停止标志
             this.sttService.setVoiceStop(sessionId, true);
 
+            // 获取音频缓冲区大小
+            const sttSession = this.sttService.getSession(sessionId);
+            const bufferCount = sttSession?.audioBuffer?.length || 0;
+            logger.info(`🔴 手动停止: 音频缓冲区帧数=${bufferCount}, sessionId=${sessionId}`);
+
             // 触发识别处理
             await this._triggerSttRecognition(ws, sessionId);
+          } else {
+            logger.warn(`无法触发识别: sttService=${!!this.sttService}, sessionId=${sessionId}`);
           }
         } else if (listenState === 'detect') {
           // 检测模式，处理文本
@@ -636,10 +679,10 @@ class WebSocketHandler {
           await new Promise(resolve => setTimeout(resolve, sendDelay));
         }
 
-        // 每10帧打印一次进度
-        if ((i + 1) % 10 === 0 || i === opusFrames.length - 1) {
-          console.log(`📤 已发送 ${i + 1}/${opusFrames.length} 帧`);
-        }
+        // // 每10帧打印一次进度
+        // if ((i + 1) % 10 === 0 || i === opusFrames.length - 1) {
+        //   console.log(`📤 已发送 ${i + 1}/${opusFrames.length} 帧`);
+        // }
 
       } catch (error) {
         console.error(`❌ 发送音频帧失败 (帧 ${i}):`, error.message);
@@ -1006,34 +1049,141 @@ class WebSocketHandler {
    */
   async _triggerSttRecognition(ws, sessionId) {
     logger.info(`🎬 开始触发语音识别: ${sessionId}`);
-      
+
     if (!this.sttService) {
       logger.warn(`STT服务未初始化`);
       return;
     }
-      
+
     const session = this.sttService.getSession(sessionId);
     if (!session) {
       logger.warn(`STT会话不存在: ${sessionId}`);
       return;
     }
-      
+
     // 获取缓存的音频数据
     const audioBuffer = session.audioBuffer || [];
-      
+
     // 清空缓冲区
     session.audioBuffer = [];
     session.voiceStop = false;
-      
+
     logger.info(`📦 音频缓冲区帧数: ${audioBuffer.length}`);
-      
+
     if (audioBuffer.length < 15) {
       logger.debug(`音频数据不足，跳过识别: ${audioBuffer.length} 帧`);
       return;
     }
-      
+
     logger.info(`🎤 开始语音识别，音频帧数: ${audioBuffer.length}`);
-      
+
+    // ========== 调试：保存音频到文件 ==========
+    try {
+      const timestamp = Date.now();
+      const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+
+      // 合并所有 Opus 帧
+      const combinedOpus = Buffer.concat(audioBuffer);
+
+      // 保存原始 Opus 数据
+      const opusFile = path.join(debugDir, `audio-${timestamp}.opus`);
+      fs.writeFileSync(opusFile, combinedOpus);
+      logger.info(`💾 已保存 Opus 音频: ${opusFile} (${combinedOpus.length} bytes)`);
+
+      // ========== 自动检测音频格式 ==========
+      // PCM @ 16kHz, 16bit, mono, 60ms = 1920 bytes (960 samples * 2 bytes)
+      // Opus 帧大小通常较小（几十到几百字节）
+
+      // 统计大帧和小帧的数量
+      let largeFrameCount = 0;
+      let smallFrameCount = 0;
+      let largeFrameTotalSize = 0;
+
+      for (const frame of audioBuffer) {
+        if (frame && frame.length > 500) {
+          largeFrameCount++;
+          largeFrameTotalSize += frame.length;
+        } else if (frame && frame.length > 0) {
+          smallFrameCount++;
+        }
+      }
+
+      // 如果大帧占多数（超过30%），认为是 PCM 格式
+      const totalFrames = largeFrameCount + smallFrameCount;
+      const largeFrameRatio = totalFrames > 0 ? largeFrameCount / totalFrames : 0;
+      const avgLargeFrameSize = largeFrameCount > 0 ? largeFrameTotalSize / largeFrameCount : 0;
+
+      let detectedFormat = 'opus';
+      let pcmData = null;
+
+      if (largeFrameRatio > 0.3 && avgLargeFrameSize > 1000) {
+        detectedFormat = 'pcm';
+        logger.info(`🔍 检测到 PCM 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 大帧平均: ${avgLargeFrameSize.toFixed(0)} bytes)`);
+        // 只使用大帧作为 PCM 数据
+        const largeFrames = audioBuffer.filter(f => f && f.length > 500);
+        pcmData = Buffer.concat(largeFrames);
+      } else {
+        detectedFormat = 'opus';
+        logger.info(`🔍 检测到 Opus 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 小帧: ${smallFrameCount}, 大帧: ${largeFrameCount})`);
+      }
+      // ========== 格式检测结束 ==========
+
+      // 解码 Opus 为 PCM 并保存为 WAV
+      try {
+        let combinedPcm;
+
+        if (detectedFormat === 'pcm') {
+          // 已是 PCM，直接使用
+          combinedPcm = pcmData;
+          logger.info(`📊 直接使用 PCM 数据: ${combinedPcm.length} bytes`);
+        } else {
+          // Opus 格式，需要解码
+          const pcmFrames = this.sttService._decodeOpusFrames(audioBuffer);
+          if (pcmFrames.length > 0) {
+            combinedPcm = Buffer.concat(pcmFrames);
+          }
+        }
+
+        if (combinedPcm && combinedPcm.length > 0) {
+          // 检查 PCM 是否全为零（静音）
+          // let maxPcm = 0;
+          // const pcmInt16 = new Int16Array(combinedPcm.buffer, combinedPcm.byteOffset, combinedPcm.length / 2);
+          // for (let i = 0; i < pcmInt16.length; i++) {
+          //   maxPcm = Math.max(maxPcm, Math.abs(pcmInt16[i]));
+          // }
+          // logger.info(`📊 PCM 最大振幅: ${maxPcm} (静音阈值 < 100)`);
+
+          // 创建 WAV 文件头
+          const wavBuffer = this._createWavBuffer(combinedPcm, 16000, 1, 16);
+          const wavFile = path.join(debugDir, `audio-${timestamp}.wav`);
+          fs.writeFileSync(wavFile, wavBuffer);
+          logger.info(`💾 已保存 WAV 音频: ${wavFile} (${wavBuffer.length} bytes)`);
+
+          // 如果是 PCM 格式，直接发送给 FunASR 识别
+          if (detectedFormat === 'pcm') {
+            logger.info(`🎤 使用 PCM 数据直接调用 FunASR 识别...`);
+            const result = await this.sttService._recognizeWithFunAsr(combinedPcm, sessionId);
+            logger.info(`✅ 识别结果: ${JSON.stringify(result)}`);
+            if (this.sttService.onResult && result.text) {
+              this.sttService.onResult(sessionId, result);
+            }
+            return; // 直接返回，不再调用后面的识别
+          }
+        } else {
+          logger.warn(`解码后没有 PCM 数据`);
+        }
+      } catch (decodeError) {
+        logger.warn(`解码音频失败: ${decodeError.message}`);
+        logger.error(decodeError.stack);
+      }
+    } catch (saveError) {
+      logger.warn(`保存音频文件失败: ${saveError.message}`);
+    }
+    // ========== 调试结束 ==========
+
     try {
       // 直接调用STT服务的内部方法处理音频
       await this.sttService._handleVoiceStop(session, audioBuffer);
@@ -1202,7 +1352,12 @@ class WebSocketHandler {
       return false;
     }
 
-    // Opus帧的能量检测 - 使用更大的阈值
+    // 忽略太小的帧（可能是噪音）
+    // if (audioData.length < 10) {
+    //   return false;
+    // }
+
+    // Opus帧的能量检测
     let energy = 0;
     const sampleCount = Math.min(audioData.length, 160);
 
@@ -1211,15 +1366,10 @@ class WebSocketHandler {
     }
     energy /= sampleCount;
 
-    // 使用较低阈值，避免漏检
-    const threshold = this.config.vad?.threshold || 30;
+    // 提高阈值，避免噪音误判
+    const threshold = this.config.vad?.threshold || 50;
     const hasVoice = energy > threshold;
-    
-    // 调试输出
-    if (hasVoice) {
-      logger.debug(`VAD检测: 有声音 (能量=${energy.toFixed(1)}, 阈值=${threshold})`);
-    }
-    
+
     return hasVoice;
   }
 
@@ -1273,6 +1423,46 @@ class WebSocketHandler {
         await this._startToChat(ws, endPrompt);
       }
     }
+  }
+
+  /**
+   * 创建 WAV 文件缓冲区
+   * @param {Buffer} pcmData - PCM 音频数据
+   * @param {number} sampleRate - 采样率
+   * @param {number} channels - 声道数
+   * @param {number} bitsPerSample - 位深度
+   * @returns {Buffer} WAV 文件缓冲区
+   */
+  _createWavBuffer(pcmData, sampleRate, channels, bitsPerSample) {
+    const byteRate = sampleRate * channels * (bitsPerSample / 8);
+    const blockAlign = channels * (bitsPerSample / 8);
+    const dataSize = pcmData.length;
+    const fileSize = 44 + dataSize;
+
+    const buffer = Buffer.alloc(fileSize);
+    let offset = 0;
+
+    // RIFF header
+    buffer.write('RIFF', offset); offset += 4;
+    buffer.writeUInt32LE(fileSize - 8, offset); offset += 4;
+    buffer.write('WAVE', offset); offset += 4;
+
+    // fmt chunk
+    buffer.write('fmt ', offset); offset += 4;
+    buffer.writeUInt32LE(16, offset); offset += 4; // chunk size
+    buffer.writeUInt16LE(1, offset); offset += 2;  // audio format (PCM)
+    buffer.writeUInt16LE(channels, offset); offset += 2;
+    buffer.writeUInt32LE(sampleRate, offset); offset += 4;
+    buffer.writeUInt32LE(byteRate, offset); offset += 4;
+    buffer.writeUInt16LE(blockAlign, offset); offset += 2;
+    buffer.writeUInt16LE(bitsPerSample, offset); offset += 2;
+
+    // data chunk
+    buffer.write('data', offset); offset += 4;
+    buffer.writeUInt32LE(dataSize, offset); offset += 4;
+    pcmData.copy(buffer, offset);
+
+    return buffer;
   }
 }
 

@@ -1,8 +1,8 @@
 import { promisify } from 'util';
 import WebSocket from 'ws';
 import zlib from 'zlib';
+import { logger } from '../../utils/logger.js';
 import BaseService from './base.js';
-
 const gzip = promisify(zlib.gzip);
 
 // Opus解码器 - 延迟加载
@@ -89,7 +89,7 @@ class SttService extends BaseService {
     try {
       const OpusDecoderClass = await getOpusDecoder();
       this.decoder = new OpusDecoderClass(this.sampleRate, this.channels);
-      console.log(`[${this.name}] Opus解码器初始化成功`);
+      logger.info(`[${this.name}] Opus解码器初始化成功`);
     } catch (error) {
       console.warn(`[${this.name}] Opus解码器初始化失败:`, error.message);
     }
@@ -175,9 +175,9 @@ class SttService extends BaseService {
     this.simulationMode = !config.host && !process.env.FUNASR_HOST &&
       !config.serverUrl && !process.env.FUNASR_SERVER_URL;
 
-    console.log(`[${this.name}] FunASR初始化完成`);
-    console.log(`[${this.name}] 服务地址: ${this.funasrConfig.uri}`);
-    console.log(`[${this.name}] 模拟模式: ${this.simulationMode ? '是' : '否'}`);
+    // console.log(`[${this.name}] FunASR初始化完成`);
+    // console.log(`[${this.name}] 服务地址: ${this.funasrConfig.uri}`);
+    // console.log(`[${this.name}] 模拟模式: ${this.simulationMode ? '是' : '否'}`);
   }
 
   async _initXunfeiStt() {
@@ -341,10 +341,24 @@ class SttService extends BaseService {
     }
 
     try {
+      // opusscript 解码需要指定帧大小（样本数）
+      // 对于 60ms 帧 @ 16kHz: frameSize = 16000 * 0.06 = 960 样本
+      // 对于 20ms 帧 @ 48kHz: frameSize = 48000 * 0.02 = 960 样本
       const pcmData = this.decoder.decode(opusData, this.frameSize);
-      return Buffer.from(pcmData);
+
+      // 检查解码结果是否有效（非全零）
+      if (pcmData && pcmData.length > 0) {
+        const int16Array = new Int16Array(pcmData.buffer || pcmData);
+        let maxAmplitude = 0;
+        for (let i = 0; i < Math.min(100, int16Array.length); i++) {
+          maxAmplitude = Math.max(maxAmplitude, Math.abs(int16Array[i]));
+        }
+        // console.log(`[${this.name}] Opus解码: ${opusData.length} bytes -> ${pcmData.length} bytes, 最大振幅: ${maxAmplitude}`);
+        return Buffer.from(pcmData);
+      }
+      return Buffer.alloc(0);
     } catch (error) {
-      console.error(`[${this.name}] Opus解码失败:`, error.message);
+      console.error(`[${this.name}] Opus解码失败:`, error.message, `frameSize=${this.frameSize}`);
       return Buffer.alloc(0);
     }
   }
@@ -712,7 +726,6 @@ class SttService extends BaseService {
 
         // 发送PCM数据
         ws.send(pcmData);
-        console.log(`[${this.name}] 发送PCM数据: ${pcmData.length} bytes`);
 
         // 发送结束消息
         const endMessage = JSON.stringify({ is_speaking: false });
@@ -737,7 +750,7 @@ class SttService extends BaseService {
       ws.on('message', (data) => {
         try {
           const response = JSON.parse(data.toString());
-          console.log(`[${this.name}] 收到FunASR响应:`, response);
+
 
           // 累积识别结果
           if (response.text) {

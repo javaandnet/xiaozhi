@@ -258,7 +258,9 @@ export class AudioRecorder {
             }
             // Send listening start message
             if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-                log(`已发送录音开始消息`, 'info');
+                const listenStartMsg = JSON.stringify({ type: 'listen', state: 'start' });
+                this.websocket.send(listenStartMsg);
+                log(`已发送录音开始消息: ${listenStartMsg}`, 'info');
             } else {
                 log('WebSocket未连接，无法发送开始消息', 'error');
                 return false;
@@ -328,11 +330,17 @@ export class AudioRecorder {
             }
             // Encode and send remaining data
             this.encodeAndSendOpus();
-            // Send end signal
+            // Send listen stop message
+            if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                const listenStopMsg = JSON.stringify({ type: 'listen', state: 'stop' });
+                this.websocket.send(listenStopMsg);
+                log('已发送录音停止消息: ' + listenStopMsg, 'info');
+            }
+            // Send end signal (empty frame)
             if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                 const emptyOpusFrame = new Uint8Array(0);
                 this.websocket.send(emptyOpusFrame);
-                log('已发送录音停止信号', 'info');
+                log('已发送空帧作为结束信号', 'info');
             }
             if (this.onRecordingStop) {
                 this.onRecordingStop();

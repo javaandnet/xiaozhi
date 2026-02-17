@@ -103,8 +103,6 @@ class TtsService extends BaseService {
     }
 
     try {
-      console.log(`🔊 使用Edge TTS合成: ${text.substring(0, 30)}${text.length > 30 ? '...' : ''}`);
-
       // 创建TTS实例
       const tts = new this.edgeTTS({
         voice: options.voice || this.voice,
