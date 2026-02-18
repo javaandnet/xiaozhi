@@ -358,7 +358,7 @@ class SttService extends BaseService {
       }
       return Buffer.alloc(0);
     } catch (error) {
-      console.error(`[${this.name}] Opus解码失败:`, error.message, `frameSize=${this.frameSize}`);
+      // opusscript 内部 buffer detach 问题，单帧丢失不影响整体识别
       return Buffer.alloc(0);
     }
   }

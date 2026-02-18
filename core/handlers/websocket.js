@@ -31,6 +31,7 @@ class WebSocketHandler {
     this.llmService = options.llmService;
     this.vadService = options.vadService;
     this.mcpService = options.mcpService || new McpService();
+    this.voiceprintService = options.voiceprintService;
 
     // 注册到设备管理器
     if (this.deviceManager && !this.deviceManager.addDevice) {
@@ -1364,6 +1365,7 @@ class WebSocketHandler {
     logger.info(`🎤 开始语音识别，音频帧数: ${audioBuffer.length}`);
 
     // ========== 调试：保存音频到文件 ==========
+    let wavBufferForVoiceprint = null;
     try {
       const timestamp = Date.now();
       const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
@@ -1434,19 +1436,11 @@ class WebSocketHandler {
         }
 
         if (combinedPcm && combinedPcm.length > 0) {
-          // 检查 PCM 是否全为零（静音）
-          // let maxPcm = 0;
-          // const pcmInt16 = new Int16Array(combinedPcm.buffer, combinedPcm.byteOffset, combinedPcm.length / 2);
-          // for (let i = 0; i < pcmInt16.length; i++) {
-          //   maxPcm = Math.max(maxPcm, Math.abs(pcmInt16[i]));
-          // }
-          // logger.info(`📊 PCM 最大振幅: ${maxPcm} (静音阈值 < 100)`);
-
           // 创建 WAV 文件头
-          const wavBuffer = this._createWavBuffer(combinedPcm, 16000, 1, 16);
+          wavBufferForVoiceprint = this._createWavBuffer(combinedPcm, 16000, 1, 16);
           const wavFile = path.join(debugDir, `audio-${timestamp}.wav`);
-          fs.writeFileSync(wavFile, wavBuffer);
-          logger.info(`💾 已保存 WAV 音频: ${wavFile} (${wavBuffer.length} bytes)`);
+          fs.writeFileSync(wavFile, wavBufferForVoiceprint);
+          logger.info(`💾 已保存 WAV 音频: ${wavFile} (${wavBufferForVoiceprint.length} bytes)`);
 
           // 如果是 PCM 格式，直接发送给 FunASR 识别
           if (detectedFormat === 'pcm') {
@@ -1471,8 +1465,31 @@ class WebSocketHandler {
     // ========== 调试结束 ==========
 
     try {
-      // 直接调用STT服务的内部方法处理音频
-      await this.sttService._handleVoiceStop(session, audioBuffer);
+      // 并发执行 STT 识别和声纹识别
+      const tasks = [];
+
+      // STT 识别任务
+      tasks.push(this.sttService._handleVoiceStop(session, audioBuffer));
+
+      // 声纹识别任务（如果有 WAV 数据且声纹服务可用）
+      if (wavBufferForVoiceprint && this.voiceprintService && this.voiceprintService.isEnabled()) {
+        tasks.push(
+          this.voiceprintService.identifySpeaker(wavBufferForVoiceprint, sessionId)
+            .then(speakerName => {
+              if (speakerName) {
+                logger.info(`🎯 声纹识别结果: ${speakerName}`);
+                ws.currentSpeaker = speakerName;
+              }
+              return speakerName;
+            })
+            .catch(err => {
+              logger.warn(`声纹识别失败: ${err.message}`);
+              return null;
+            })
+        );
+      }
+
+      await Promise.all(tasks);
       logger.info(`✅ 语音识别调用完成`);
     } catch (error) {
       logger.error(`❌ 语音识别失败: ${error.message}`);

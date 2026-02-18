@@ -18,6 +18,7 @@ import LLMService from './core/services/llm.js';
 import McpService from './core/services/mcp.js';
 import SttService from './core/services/stt.js';
 import TTSService from './core/services/tts.js';
+import VoiceprintService from './core/services/voiceprint.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -67,6 +68,13 @@ const config = {
       endpoint: process.env.MCP_ENDPOINT || null,
       contextProviders: process.env.MCP_CONTEXT_PROVIDERS ?
         JSON.parse(process.env.MCP_CONTEXT_PROVIDERS) : null
+    },
+    // 声纹识别配置
+    voiceprint: {
+      url: process.env.VOICEPRINT_URL || '',
+      speakers: process.env.VOICEPRINT_SPEAKERS ?
+        process.env.VOICEPRINT_SPEAKERS.split('|') : [],
+      similarity_threshold: parseFloat(process.env.VOICEPRINT_THRESHOLD) || 0.4
     }
   }
 };
@@ -76,6 +84,7 @@ const llmService = new LLMService(config);
 const ttsService = new TTSService(config);
 const sttService = new SttService(config.services?.stt || {});
 const mcpService = new McpService(config);
+const voiceprintService = new VoiceprintService(config.services?.voiceprint || {});
 const sessionManager = new SessionManager();
 const deviceManager = new DeviceManager();
 
@@ -93,6 +102,7 @@ initializeWebSocketHandler({
   ttsService,
   sttService,
   mcpService,
+  voiceprintService,
   mcpConfig  // 传递MCP配置
 });
 
@@ -116,6 +126,17 @@ initializeWebSocketHandler({
     await sttService.initialize();
   } catch (error) {
     console.error('❌ STT服务初始化失败:', error.message);
+  }
+
+  try {
+    await voiceprintService.initialize();
+    if (voiceprintService.isEnabled()) {
+      console.log('✅ 声纹服务初始化成功');
+    } else {
+      console.log('ℹ️ 声纹服务未启用或配置不完整');
+    }
+  } catch (error) {
+    console.error('❌ 声纹服务初始化失败:', error.message);
   }
 })();
 
@@ -195,6 +216,7 @@ wss.on('connection', (ws, req) => {
     llmService: llmService,
     ttsService: ttsService,
     sttService: sttService,
+    voiceprintService: voiceprintService,
     sessionManager: sessionManager
   });
 });
