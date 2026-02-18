@@ -37,6 +37,10 @@ export async function webSocketConnect(otaUrl, config) {
     connUrl.searchParams.append('device-id', config.deviceId);
     connUrl.searchParams.append('client-id', config.clientId);
 
+    // 添加客户端类型和时间戳参数
+    connUrl.searchParams.append('client_type', 'agent');
+    connUrl.searchParams.append('timestamp', Date.now());
+
     const wsurl = connUrl.toString()
 
     log(`正在连接: ${wsurl}`, 'info');

@@ -69,7 +69,7 @@ class DeviceModel extends BaseModel {
       errors.push('客户端ID不能为空');
     }
 
-    const validTypes = ['sensor', 'actuator', 'hard', 'web', 'unknown'];
+    const validTypes = ['sensor', 'agent', 'hard', 'manager', 'unknown'];
     if (data.type && !validTypes.includes(data.type)) {
       errors.push(`无效的设备类型: ${data.type}`);
     }

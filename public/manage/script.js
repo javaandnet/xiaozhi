@@ -1,3 +1,10 @@
+// 设备类型配置（一元化管理）
+const DEVICE_TYPES = [
+    { value: 'agent', label: 'Agent', tag: 'success', canTakePhoto: false, canSendMessage: true },
+    { value: 'manager', label: '管理者', tag: 'primary', canTakePhoto: false, canSendMessage: false },
+    { value: 'hard', label: '小爱', tag: 'warning', canTakePhoto: true, canSendMessage: true }
+];
+
 // 创建Vue应用实例
 const { createApp, ref, reactive, computed, onMounted } = Vue;
 
@@ -23,6 +30,16 @@ const app = createApp({
         const deviceDetailVisible = ref(false);
         const currentDevice = ref(null);
 
+        // 发送信息对话框
+        const sendMessageVisible = ref(false);
+        const sendMessageForm = reactive({
+            targetClientId: '',
+            targetType: '',
+            messageType: 'tts',
+            content: '',
+            isllm: true
+        });
+
         // 折叠面板状态
         const activeCollapse = ref(['connection', 'logs']);
 
@@ -30,16 +47,6 @@ const app = createApp({
         const systemLogs = ref([
             { id: 1, time: new Date().toLocaleTimeString(), message: '系统初始化完成', type: 'info' }
         ]);
-
-        // 统计数据
-        const deviceStats = computed(() => {
-            const total = devices.value.length;
-            const online = devices.value.filter(d => d.status === 'online').length;
-            const offline = total - online;
-            const esp32 = devices.value.filter(d => d.type === 'esp32' || d.ip !== '192.168.1.55').length;
-
-            return { total, online, offline, esp32 };
-        });
 
         // 过滤后的设备列表
         const filteredDevices = computed(() => {
@@ -62,16 +69,7 @@ const app = createApp({
 
             // 类型筛选
             if (filterType.value) {
-                result = result.filter(device => {
-                    if (filterType.value === 'esp32') {
-                        return device.ip !== '192.168.1.55' && device.type !== 'web';
-                    } else if (filterType.value === 'web') {
-                        return device.type === 'web';
-                    } else if (filterType.value === 'hard') {
-                        return device.type === 'hard';
-                    }
-                    return true;
-                });
+                result = result.filter(device => device.type === filterType.value);
             }
 
             return result;
@@ -92,7 +90,6 @@ const app = createApp({
             reconnectBtn: ref(null),
             serverUrlInput: ref(null),
             saveServerBtn: ref(null),
-            clientIdDisplay: ref(null),
             testBtn: ref(null)
         };
 
@@ -115,20 +112,6 @@ const app = createApp({
             systemLogs.value = [
                 { id: Date.now(), time: new Date().toLocaleTimeString(), message: '日志已清空', type: 'info' }
             ];
-        };
-
-        const updateClientInfoDisplay = () => {
-            if (elements.clientIdDisplay.value) {
-                let displayText = '';
-                if (clientId.value) {
-                    displayText = `ClientID: ${clientId.value}`;
-                }
-                if (serverConfig.websocketUrl) {
-                    displayText += displayText ? ` | WebSocket: ${serverConfig.websocketUrl}` : `WebSocket: ${serverConfig.websocketUrl}`;
-                }
-                elements.clientIdDisplay.value.textContent = displayText;
-                elements.clientIdDisplay.value.style.color = clientId.value ? '#28a745' : '#6c757d';
-            }
         };
 
         const updateUI = () => {
@@ -176,7 +159,6 @@ const app = createApp({
             serverConfig.httpServerUrl = newUrl;
             localStorage.setItem('httpServerUrl', newUrl);
             serverConfig.websocketUrl = null;
-            updateClientInfoDisplay();
 
             if (isConnected.value) {
                 addSystemLog('服务器地址已更新，如需使用新地址请重新连接', 'info');
@@ -213,7 +195,6 @@ const app = createApp({
                 }
 
                 serverConfig.websocketUrl = otaData.websocket_url;
-                updateClientInfoDisplay();
                 addSystemLog(`获取到WebSocket地址: ${otaData.websocket_url}`, 'success');
 
                 isConnected.value = true;
@@ -240,7 +221,7 @@ const app = createApp({
             }
 
             const wsUrl = new URL(`ws://${window.location.host}/ws`);
-            wsUrl.searchParams.append('client_type', 'web');
+            wsUrl.searchParams.append('client_type', 'manager');
             wsUrl.searchParams.append('timestamp', Date.now());
 
             ws.value = new WebSocket(wsUrl.toString());
@@ -278,7 +259,6 @@ const app = createApp({
                 case 'connection_ack':
                     if (message.clientId) {
                         clientId.value = message.clientId;
-                        updateClientInfoDisplay();
                         addSystemLog(`已获取客户端ID: ${clientId.value}`, 'success');
                     }
                     break;
@@ -359,7 +339,7 @@ const app = createApp({
             try {
                 const response = await fetch(`${serverConfig.httpServerUrl}/api/devices`);
                 const result = await response.json();
-
+                console.log('获取设备列表结果:', result);
                 if (result.success) {
                     devices.value = result.data || [];
                     addSystemLog(`设备列表刷新成功，共 ${devices.value.length} 个设备`, 'success');
@@ -420,22 +400,106 @@ const app = createApp({
             addSystemLog('打开添加设备对话框', 'info');
         };
 
-        const getDeviceTypeTag = (type) => {
-            switch (type) {
-                case 'esp32': return 'success';
-                case 'web': return 'primary';
-                case 'hard': return 'warning';
-                default: return 'info';
+        // 获取设备类型配置
+        const getDeviceTypeConfig = (type) => {
+            return DEVICE_TYPES.find(t => t.value === type);
+        };
+
+        // 检查设备是否支持拍照
+        const canTakePhoto = (device) => {
+            if (device.status !== 'online') return false;
+            const config = getDeviceTypeConfig(device.deviceType);
+            return config ? config.canTakePhoto : false;
+        };
+
+        // 检查设备是否支持发送信息
+        const canSendMessage = (device) => {
+            if (device.status !== 'online') return false;
+            const config = getDeviceTypeConfig(device.deviceType);
+            return config ? config.canSendMessage : false;
+        };
+
+        const takePhoto = async (device) => {
+            if (!canTakePhoto(device)) {
+                addSystemLog('该设备不支持拍照功能', 'error');
+                return;
+            }
+
+            try {
+                addSystemLog(`正在向设备 ${device.clientId} 发送拍照指令...`, 'info');
+
+                // 通过WebSocket发送拍照指令
+                if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+                    const photoCommand = {
+                        type: 'mcp',
+                        name: 'photo',
+                        params: { question: "请分析这张图片并解释 " }
+                    };
+                    const messageCommand = {
+                        type: 'friend',
+                        clientid: device.clientId,
+                        data: photoCommand
+                    };
+
+                    ws.value.send(JSON.stringify(messageCommand));
+                    addSystemLog(`拍照指令已发送到设备 ${device.clientId}`, 'success');
+                } else {
+                    addSystemLog('WebSocket连接未建立', 'error');
+                }
+            } catch (error) {
+                addSystemLog(`拍照指令发送失败: ${error.message}`, 'error');
             }
         };
 
-        const getDeviceTypeName = (type) => {
-            switch (type) {
-                case 'esp32': return 'ESP32';
-                case 'web': return '网页客户端';
-                case 'hard': return '硬件设备';
-                default: return '未知设备';
+        const openSendMessageDialog = (device) => {
+            sendMessageForm.targetClientId = device.clientId;
+            sendMessageForm.targetType = device.deviceType;
+            // 硬件设备默认语音，网页设备默认语音
+            sendMessageForm.messageType = 'tts';
+            sendMessageForm.content = '';
+            sendMessageForm.isllm = true;
+            sendMessageVisible.value = true;
+        };
+
+        const sendMessage = async () => {
+            if (!sendMessageForm.content.trim()) {
+                addSystemLog('请输入消息内容', 'error');
+                return;
             }
+
+            try {
+                addSystemLog(`正在向设备 ${sendMessageForm.targetClientId} 发送消息...`, 'info');
+
+                if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+                    const messageCommand = {
+                        type: 'friend',
+                        clientid: sendMessageForm.targetClientId,
+                        data: {
+                            type: sendMessageForm.messageType,
+                            content: sendMessageForm.content,
+                            isllm: sendMessageForm.isllm,
+                            timestamp: new Date().toISOString()
+                        }
+                    };
+                    ws.value.send(JSON.stringify(messageCommand));
+                    addSystemLog(`消息已发送到设备 ${sendMessageForm.targetClientId}`, 'success');
+                    sendMessageVisible.value = false;
+                } else {
+                    addSystemLog('WebSocket连接未建立', 'error');
+                }
+            } catch (error) {
+                addSystemLog(`消息发送失败: ${error.message}`, 'error');
+            }
+        };
+
+        const getDeviceTypeTag = (type) => {
+            const deviceType = DEVICE_TYPES.find(t => t.value === type);
+            return deviceType ? deviceType.tag : 'info';
+        };
+
+        const getDeviceTypeName = (type) => {
+            const deviceType = DEVICE_TYPES.find(t => t.value === type);
+            return deviceType ? deviceType.label : '未知设备';
         };
 
         const formatTime = (time) => {
@@ -453,14 +517,12 @@ const app = createApp({
             elements.reconnectBtn.value = document.getElementById('reconnectBtn');
             elements.serverUrlInput.value = document.getElementById('serverUrlInput');
             elements.saveServerBtn.value = document.getElementById('saveServerBtn');
-            elements.clientIdDisplay.value = document.getElementById('clientIdDisplay');
             elements.testBtn.value = document.getElementById('testBtn');
 
             // 初始化服务器地址显示
             if (elements.serverUrlInput.value) {
                 elements.serverUrlInput.value.value = serverConfig.httpServerUrl;
             }
-            updateClientInfoDisplay();
             updateUI();
 
             // 页面加载后自动连接
@@ -487,15 +549,15 @@ const app = createApp({
             deviceDetailVisible,
             currentDevice,
             activeCollapse,
+            sendMessageVisible,
+            sendMessageForm,
             systemLogs,
-            deviceStats,
             filteredDevices,
             serverConfig,
 
             // 方法
             addSystemLog,
             clearSystemLogs,
-            updateClientInfoDisplay,
             updateUI,
             saveServerConfig,
             connect,
@@ -508,9 +570,15 @@ const app = createApp({
             showDeviceDetail,
             disconnectDevice,
             showAddDeviceDialog,
+            takePhoto,
+            openSendMessageDialog,
+            sendMessage,
             getDeviceTypeTag,
             getDeviceTypeName,
-            formatTime
+            formatTime,
+            DEVICE_TYPES,
+            canTakePhoto,
+            canSendMessage
         };
     }
 });

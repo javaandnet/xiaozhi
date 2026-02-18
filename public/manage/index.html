@@ -20,11 +20,11 @@
             font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            padding: 20px;
+            padding: 10px;
         }
 
         .container {
-            max-width: 1400px;
+            max-width: 100%;
             margin: 0 auto;
             background: white;
             border-radius: 15px;
@@ -378,255 +378,262 @@
                 </div>
             </div>
 
-            <!-- 连接控制折叠面板 -->
-            <el-collapse v-model="activeCollapse">
-                <el-collapse-item title="🔗 服务器连接" name="connection">
-                    <template #title>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-weight: bold; font-size: 15px;">🔗 服务器连接</span>
-                            <el-tag v-if="isConnected" type="success" size="small">已连接</el-tag>
-                            <el-tag v-else type="info" size="small">未连接</el-tag>
+            <div style="padding: 10px;">
+                <!-- 连接控制折叠面板 -->
+                <el-collapse v-model="activeCollapse">
+                    <el-collapse-item title="🔗 服务器连接" name="connection">
+                        <template #title>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="font-weight: bold; font-size: 15px;">🔗 服务器连接</span>
+                                <el-tag v-if="isConnected" type="success" size="small">已连接</el-tag>
+                                <el-tag v-else type="info" size="small">未连接</el-tag>
+                            </div>
+                        </template>
+                        <div class="controls">
+                            <div class="server-config">
+                                <label for="serverUrlInput" class="config-label">服务器地址:</label>
+                                <input type="text" id="serverUrlInput" class="server-input"
+                                    value="http://localhost:8003" placeholder="输入服务器地址 (如: http://localhost:8003)">
+                                <button class="btn btn-secondary" id="saveServerBtn">
+                                    💾 保存
+                                </button>
+                            </div>
+                            <div class="connection-buttons">
+                                <button class="btn btn-success" id="connectBtn">
+                                    🔗 连接服务器
+                                </button>
+                                <button class="btn btn-warning" id="testBtn">
+                                    🧪 测试连接
+                                </button>
+                                <button class="btn btn-danger" id="disconnectBtn" disabled>
+                                    🔌 断开连接
+                                </button>
+                                <button class="btn btn-primary" id="reconnectBtn" disabled>
+                                    🔄 重新连接
+                                </button>
+                            </div>
                         </div>
-                    </template>
-                    <div class="controls">
-                        <div class="server-config">
-                            <label for="serverUrlInput" class="config-label">服务器地址:</label>
-                            <input type="text" id="serverUrlInput" class="server-input" value="http://localhost:8003"
-                                placeholder="输入服务器地址 (如: http://localhost:8003)">
-                            <button class="btn btn-secondary" id="saveServerBtn">
-                                💾 保存
-                            </button>
-                            <span id="clientIdDisplay" style="margin-left: 10px; font-size: 12px; color: #6c757d;"></span>
-                        </div>
-                        <div class="connection-buttons">
-                            <button class="btn btn-success" id="connectBtn">
-                                🔗 连接服务器
-                            </button>
-                            <button class="btn btn-warning" id="testBtn">
-                                🧪 测试连接
-                            </button>
-                            <button class="btn btn-danger" id="disconnectBtn" disabled>
-                                🔌 断开连接
-                            </button>
-                            <button class="btn btn-primary" id="reconnectBtn" disabled>
-                                🔄 重新连接
-                            </button>
-                        </div>
-                    </div>
-                </el-collapse-item>
-            </el-collapse>
+                    </el-collapse-item>
+                </el-collapse>
 
-            <!-- 设备管理主面板 -->
-            <div class="device-management-panel" id="deviceManagementPanel">
-                <!-- 操作工具栏 -->
-                <div class="toolbar"
-                    style="padding: 20px; background: #f5f7fa; border-bottom: 1px solid #e4e7ed; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
-                    <div style="flex: 1; min-width: 300px; display: flex; gap: 10px;">
-                        <el-input v-model="searchKeyword" placeholder="搜索设备ID、IP地址..." prefix-icon="Search" clearable
-                            style="flex: 1; max-width: 300px;">
-                        </el-input>
-                        <el-select v-model="filterStatus" placeholder="状态筛选" clearable style="width: 120px;">
-                            <el-option label="在线" value="online"></el-option>
-                            <el-option label="离线" value="offline"></el-option>
-                        </el-select>
-                        <el-select v-model="filterType" placeholder="类型筛选" clearable style="width: 120px;">
-                            <el-option label="ESP32" value="esp32"></el-option>
-                            <el-option label="网页客户端" value="web"></el-option>
-                            <el-option label="硬件设备" value="hard"></el-option>
-                        </el-select>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <el-button type="primary" @click="refreshDevices" :loading="loading">
-                            <el-icon>
-                                <Refresh />
-                            </el-icon>
-                            刷新
-                        </el-button>
-                        <el-button type="success" @click="showAddDeviceDialog" v-if="false">
-                            <el-icon>
-                                <Plus />
-                            </el-icon>
-                            添加设备
-                        </el-button>
-                        <el-dropdown @command="handleBatchCommand" v-if="selectedDevices.length > 0">
-                            <el-button type="warning">
-                                批量操作 <el-icon>
-                                    <ArrowDown />
+                <!-- 设备管理主面板 -->
+                <div class="device-management-panel" id="deviceManagementPanel">
+                    <!-- 操作工具栏 -->
+                    <div class="toolbar"
+                        style="padding: 15px 10px; background: #f5f7fa; border-bottom: 1px solid #e4e7ed; display: flex; flex-wrap: wrap; gap: 15px; align-items: center;">
+                        <div style="flex: 1; min-width: 300px; display: flex; gap: 10px;">
+                            <el-input v-model="searchKeyword" placeholder="搜索设备ID、IP地址..." prefix-icon="Search"
+                                clearable style="flex: 1; max-width: 400px;">
+                            </el-input>
+                            <el-select v-model="filterStatus" placeholder="状态筛选" clearable style="width: 120px;">
+                                <el-option label="在线" value="online"></el-option>
+                                <el-option label="离线" value="offline"></el-option>
+                            </el-select>
+                            <el-select v-model="filterType" placeholder="类型筛选" clearable style="width: 120px;">
+                                <el-option v-for="item in DEVICE_TYPES" :key="item.value" :label="item.label"
+                                    :value="item.value"></el-option>
+                            </el-select>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <el-button type="primary" @click="refreshDevices" :loading="loading">
+                                <el-icon>
+                                    <Refresh />
                                 </el-icon>
+                                刷新
                             </el-button>
-                            <template #dropdown>
-                                <el-dropdown-menu>
-                                    <el-dropdown-item command="disconnect">断开连接</el-dropdown-item>
-                                    <el-dropdown-item command="cleanup">清理离线设备</el-dropdown-item>
-                                </el-dropdown-menu>
-                            </template>
-                        </el-dropdown>
-                    </div>
-                </div>
-
-                <!-- 统计卡片 -->
-                <div class="stats-cards"
-                    style="padding: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
-                    <el-card class="device-card" shadow="hover">
-                        <div style="text-align: center;">
-                            <div style="font-size: 24px; font-weight: bold; color: #409eff;">{{ deviceStats.total }}
-                            </div>
-                            <div style="color: #909399; margin-top: 5px;">总设备数</div>
-                        </div>
-                    </el-card>
-                    <el-card class="device-card" shadow="hover">
-                        <div style="text-align: center;">
-                            <div style="font-size: 24px; font-weight: bold; color: #67c23a;">{{ deviceStats.online }}
-                            </div>
-                            <div style="color: #909399; margin-top: 5px;">在线设备</div>
-                        </div>
-                    </el-card>
-                    <el-card class="device-card" shadow="hover">
-                        <div style="text-align: center;">
-                            <div style="font-size: 24px; font-weight: bold; color: #909399;">{{ deviceStats.offline }}
-                            </div>
-                            <div style="color: #909399; margin-top: 5px;">离线设备</div>
-                        </div>
-                    </el-card>
-                    <el-card class="device-card" shadow="hover">
-                        <div style="text-align: center;">
-                            <div style="font-size: 24px; font-weight: bold; color: #e6a23c;">{{ deviceStats.esp32 }}
-                            </div>
-                            <div style="color: #909399; margin-top: 5px;">ESP32设备</div>
-                        </div>
-                    </el-card>
-                </div>
-
-                <!-- 设备列表表格 -->
-                <div class="device-table-container" style="padding: 0 20px 20px;">
-                    <el-table :data="filteredDevices" style="width: 100%" v-loading="loading" stripe border>
-
-                        <el-table-column prop="clientId" label="客户端ID" width="180">
-                            <template #default="scope">
-                                {{ scope.row.clientId }}
-                            </template>
-                        </el-table-column>
-                        <el-table-column prop="deviceId" label="设备ID" width="150"
-                            show-overflow-tooltip></el-table-column>
-                        <el-table-column prop="type" label="设备类型" width="120">
-                            <template #default="scope">
-                                <el-tag :type="getDeviceTypeTag(scope.row.type)" size="small">
-                                    {{ getDeviceTypeName(scope.row.type) }}
-                                </el-tag>
-                            </template>
-                        </el-table-column>
-                        <el-table-column prop="ip" label="IP地址" width="130"></el-table-column>
-                        <el-table-column prop="status" label="状态" width="100">
-                            <template #default="scope">
-                                <el-tag :type="scope.row.status === 'online' ? 'success' : 'info'" size="small">
-                                    {{ scope.row.status === 'online' ? '在线' : '离线' }}
-                                </el-tag>
-                            </template>
-                        </el-table-column>
-
-                        <el-table-column prop="lastActivity" label="最后活动" width="180">
-                            <template #default="scope">
-                                <span>{{ formatTime(scope.row.lastActivity) }}</span>
-                            </template>
-                        </el-table-column>
-                        <el-table-column label="操作" width="150" fixed="right">
-                            <template #default="scope">
-                                <el-button size="small" @click="showDeviceDetail(scope.row)">
-                                    详情
+                            <el-button type="success" @click="showAddDeviceDialog" v-if="false">
+                                <el-icon>
+                                    <Plus />
+                                </el-icon>
+                                添加设备
+                            </el-button>
+                            <el-dropdown @command="handleBatchCommand" v-if="selectedDevices.length > 0">
+                                <el-button type="warning">
+                                    批量操作 <el-icon>
+                                        <ArrowDown />
+                                    </el-icon>
                                 </el-button>
-                                <el-button size="small" type="danger" @click="disconnectDevice(scope.row)"
-                                    :disabled="scope.row.status !== 'online'">
-                                    断开
-                                </el-button>
-                            </template>
-                        </el-table-column>
-                    </el-table>
-
-                    <!-- 分页 -->
-                    <div style="margin-top: 20px; text-align: right;">
-                        <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize"
-                            :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper"
-                            :total="filteredDevices.length">
-                        </el-pagination>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 设备详情抽屉 -->
-            <el-drawer v-model="deviceDetailVisible" title="设备详情" direction="rtl" size="500px">
-                <div v-if="currentDevice">
-                    <el-descriptions :column="1" border>
-                        <el-descriptions-item label="客户端ID">{{ currentDevice.clientId }}</el-descriptions-item>
-                        <el-descriptions-item label="设备ID">{{ currentDevice.deviceId }}</el-descriptions-item>
-                        <el-descriptions-item label="设备类型">
-                            <el-tag :type="getDeviceTypeTag(currentDevice.type)">
-                                {{ getDeviceTypeName(currentDevice.type) }}
-                            </el-tag>
-                        </el-descriptions-item>
-                        <el-descriptions-item label="IP地址">{{ currentDevice.ip }}</el-descriptions-item>
-                        <el-descriptions-item label="连接状态">
-                            <el-tag :type="currentDevice.status === 'online' ? 'success' : 'info'">
-                                {{ currentDevice.status === 'online' ? '在线' : '离线' }}
-                            </el-tag>
-                        </el-descriptions-item>
-                        <el-descriptions-item label="电量" v-if="currentDevice.battery">
-                            <el-progress :percentage="currentDevice.battery"
-                                :status="currentDevice.battery > 30 ? 'success' : 'exception'">
-                            </el-progress>
-                        </el-descriptions-item>
-                        <el-descriptions-item label="信号强度" v-if="currentDevice.signal">{{ currentDevice.signal
-                            }}</el-descriptions-item>
-                        <el-descriptions-item label="连接时间">{{ formatTime(currentDevice.connectedAt)
-                            }}</el-descriptions-item>
-                        <el-descriptions-item label="最后活动">{{ formatTime(currentDevice.lastActivity)
-                            }}</el-descriptions-item>
-                        <el-descriptions-item label="功能特性"
-                            v-if="currentDevice.capabilities && currentDevice.capabilities.length > 0">
-                            <el-tag v-for="cap in currentDevice.capabilities" :key="cap" size="small"
-                                style="margin-right: 5px;">
-                                {{ cap }}
-                            </el-tag>
-                        </el-descriptions-item>
-                    </el-descriptions>
-
-                    <div style="margin-top: 20px; text-align: center;">
-                        <el-button type="danger" @click="disconnectDevice(currentDevice)"
-                            :disabled="currentDevice.status !== 'online'">
-                            断开连接
-                        </el-button>
-                        <el-button @click="deviceDetailVisible = false">关闭</el-button>
-                    </div>
-                </div>
-            </el-drawer>
-
-            <!-- 系统信息折叠面板 -->
-            <el-collapse v-model="activeCollapse">
-                <el-collapse-item name="logs">
-                    <template #title>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-weight: bold; font-size: 15px;">📋 系统日志</span>
-                            <el-badge :value="systemLogs.length" :max="99" type="primary" v-if="systemLogs.length > 0" />
+                                <template #dropdown>
+                                    <el-dropdown-menu>
+                                        <el-dropdown-item command="disconnect">断开连接</el-dropdown-item>
+                                        <el-dropdown-item command="cleanup">清理离线设备</el-dropdown-item>
+                                    </el-dropdown-menu>
+                                </template>
+                            </el-dropdown>
                         </div>
+                    </div>
+
+                    <!-- 设备列表表格 -->
+                    <div class="device-table-container" style="padding: 0 10px 20px;">
+                        <el-table :data="filteredDevices" style="width: 100%" v-loading="loading" stripe border>
+
+                            <el-table-column prop="clientId" label="客户端ID" min-width="280">
+                                <template #default="scope">
+                                    {{ scope.row.clientId }}
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="deviceId" label="设备ID" min-width="180"
+                                show-overflow-tooltip></el-table-column>
+                            <el-table-column prop="type" label="设备类型" width="100">
+                                <template #default="scope">
+                                    <el-tag v-if="scope.row.clientId === clientId" type="warning" size="small">
+                                        本机
+                                    </el-tag>
+                                    <el-tag v-else :type="getDeviceTypeTag(scope.row.deviceType)" size="small">
+                                        {{ getDeviceTypeName(scope.row.deviceType) }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="ip" label="IP地址" min-width="150"></el-table-column>
+                            <el-table-column prop="status" label="状态" width="80">
+                                <template #default="scope">
+                                    <el-tag :type="scope.row.status === 'online' ? 'success' : 'info'" size="small">
+                                        {{ scope.row.status === 'online' ? '在线' : '离线' }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+
+                            <el-table-column prop="lastActivity" label="最后活动" min-width="180">
+                                <template #default="scope">
+                                    <span>{{ formatTime(scope.row.lastActivity) }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="拍照" width="90">
+                                <template #default="scope">
+                                    <el-button v-if="canTakePhoto(scope.row)" size="small" type="primary"
+                                        @click="takePhoto(scope.row)">
+                                        📷 拍照
+                                    </el-button>
+                                    <span v-else style="color: #909399;">-</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="发送信息" width="100">
+                                <template #default="scope">
+                                    <el-button v-if="canSendMessage(scope.row)" size="small" type="success"
+                                        @click="openSendMessageDialog(scope.row)">
+                                        💬 发送
+                                    </el-button>
+                                    <span v-else style="color: #909399;">-</span>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+
+                        <!-- 分页 -->
+                        <div style="margin-top: 20px; text-align: right;">
+                            <el-pagination v-model:current-page="currentPage" v-model:page-size="pageSize"
+                                :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper"
+                                :total="filteredDevices.length">
+                            </el-pagination>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 设备详情抽屉 -->
+                <el-drawer v-model="deviceDetailVisible" title="设备详情" direction="rtl" size="500px">
+                    <div v-if="currentDevice">
+                        <el-descriptions :column="1" border>
+                            <el-descriptions-item label="客户端ID">{{ currentDevice.clientId }}</el-descriptions-item>
+                            <el-descriptions-item label="设备ID">{{ currentDevice.deviceId }}</el-descriptions-item>
+                            <el-descriptions-item label="设备类型">
+                                <el-tag :type="getDeviceTypeTag(currentDevice.type)">
+                                    {{ getDeviceTypeName(currentDevice.type) }}
+                                </el-tag>
+                            </el-descriptions-item>
+                            <el-descriptions-item label="IP地址">{{ currentDevice.ip }}</el-descriptions-item>
+                            <el-descriptions-item label="连接状态">
+                                <el-tag :type="currentDevice.status === 'online' ? 'success' : 'info'">
+                                    {{ currentDevice.status === 'online' ? '在线' : '离线' }}
+                                </el-tag>
+                            </el-descriptions-item>
+                            <el-descriptions-item label="电量" v-if="currentDevice.battery">
+                                <el-progress :percentage="currentDevice.battery"
+                                    :status="currentDevice.battery > 30 ? 'success' : 'exception'">
+                                </el-progress>
+                            </el-descriptions-item>
+                            <el-descriptions-item label="信号强度" v-if="currentDevice.signal">{{ currentDevice.signal
+                                }}</el-descriptions-item>
+                            <el-descriptions-item label="连接时间">{{ formatTime(currentDevice.connectedAt)
+                                }}</el-descriptions-item>
+                            <el-descriptions-item label="最后活动">{{ formatTime(currentDevice.lastActivity)
+                                }}</el-descriptions-item>
+                            <el-descriptions-item label="功能特性"
+                                v-if="currentDevice.capabilities && currentDevice.capabilities.length > 0">
+                                <el-tag v-for="cap in currentDevice.capabilities" :key="cap" size="small"
+                                    style="margin-right: 5px;">
+                                    {{ cap }}
+                                </el-tag>
+                            </el-descriptions-item>
+                        </el-descriptions>
+
+                        <div style="margin-top: 20px; text-align: center;">
+                            <el-button type="danger" @click="disconnectDevice(currentDevice)"
+                                :disabled="currentDevice.status !== 'online'">
+                                断开连接
+                            </el-button>
+                            <el-button @click="deviceDetailVisible = false">关闭</el-button>
+                        </div>
+                    </div>
+                </el-drawer>
+
+                <!-- 发送信息对话框 -->
+                <el-dialog v-model="sendMessageVisible" title="发送信息" width="500px">
+                    <el-form :model="sendMessageForm" label-width="80px">
+                        <el-form-item label="目标设备">
+                            <el-input v-model="sendMessageForm.targetClientId" disabled></el-input>
+                        </el-form-item>
+                        <!-- 网页设备显示消息类型选择 -->
+                        <el-form-item label="消息类型" v-if="sendMessageForm.targetType !== 'hard'">
+                            <el-radio-group v-model="sendMessageForm.messageType">
+                                <el-radio value="tts">语音</el-radio>
+                                <el-radio value="text">文本</el-radio>
+                            </el-radio-group>
+                        </el-form-item>
+                        <el-form-item label="">
+                            <el-checkbox v-model="sendMessageForm.isllm">智能分析</el-checkbox>
+                        </el-form-item>
+                        <el-form-item label="消息内容">
+                            <el-input v-model="sendMessageForm.content" type="textarea" :rows="4"
+                                placeholder="请输入消息内容"></el-input>
+                        </el-form-item>
+                    </el-form>
+                    <template #footer>
+                        <el-button @click="sendMessageVisible = false">取消</el-button>
+                        <el-button type="primary" @click="sendMessage">发送</el-button>
                     </template>
-                    <div class="system-info" style="padding: 15px 0; background: #f0f9ff;">
-                        <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 10px;">
-                            <el-button size="small" @click="clearSystemLogs">
-                                清空日志
-                            </el-button>
-                        </div>
-                        <div id="systemLogContainer"
-                            style="min-height: 100px; max-height: 200px; overflow-y: auto; background: white; border-radius: 10px; padding: 10px; font-family: monospace; font-size: 13px; color: #495057;">
-                            <div v-for="log in systemLogs" :key="log.id"
-                                :style="{ color: log.type === 'error' ? '#dc3545' : log.type === 'success' ? '#28a745' : '#6c757d', marginBottom: '5px' }">
-                                [{{ log.time }}] {{ log.message }}
+                </el-dialog>
+
+                <!-- 系统信息折叠面板 -->
+                <el-collapse v-model="activeCollapse">
+                    <el-collapse-item name="logs">
+                        <template #title>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="font-weight: bold; font-size: 15px;">📋 系统日志</span>
+                                <el-badge :value="systemLogs.length" :max="99" type="primary"
+                                    v-if="systemLogs.length > 0" />
                             </div>
-                            <div v-if="systemLogs.length === 0" style="text-align: center; color: #6c757d; padding: 20px;">
-                                暂无系统日志
+                        </template>
+                        <div class="system-info" style="padding: 15px 0; background: #f0f9ff;">
+                            <div
+                                style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 10px;">
+                                <el-button size="small" @click="clearSystemLogs">
+                                    清空日志
+                                </el-button>
+                            </div>
+                            <div id="systemLogContainer"
+                                style="min-height: 100px; max-height: 200px; overflow-y: auto; background: white; border-radius: 10px; padding: 10px; font-family: monospace; font-size: 13px; color: #495057;">
+                                <div v-for="log in systemLogs" :key="log.id"
+                                    :style="{ color: log.type === 'error' ? '#dc3545' : log.type === 'success' ? '#28a745' : '#6c757d', marginBottom: '5px' }">
+                                    [{{ log.time }}] {{ log.message }}
+                                </div>
+                                <div v-if="systemLogs.length === 0"
+                                    style="text-align: center; color: #6c757d; padding: 20px;">
+                                    暂无系统日志
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </el-collapse-item>
-            </el-collapse>
+                    </el-collapse-item>
+                </el-collapse>
+            </div>
         </div>
     </div>
 

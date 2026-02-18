@@ -632,7 +632,7 @@ class WebSocketHandler {
     if (this.llmService && this.llmService.isConfigured()) {
       // 构造输入文本
       const inputText = includePersona
-        ? `${this.getPersonaPrompt()}\n\n用户说: ${text}`
+        ? `${this.getPersonaPrompt()}\n\n请不要生成表情。\n\n用户说: ${text}`
         : text;
 
       try {
@@ -993,56 +993,59 @@ class WebSocketHandler {
 
     // 根据消息类型进行不同处理
     const messageType = messageData.type;
-
+    const isllm = messageData.isllm;
     try {
       // 提取公共逻辑
       const { sessionId, text } = this.getFriendMessageContext(ws, targetDevice, messageData);
-
+      let sendText = text;
+      if (isllm) {
+        //generateLlmResponse
+        sendText = await this.generateLlmResponse(ws, sendText);
+      }
       if (messageType === 'tts') {
         // tts类型 - 转换成语音发送
-        await this.sendTtsAudio(targetDevice.connection, sessionId, text);
+        await this.sendTtsAudio(targetDevice.connection, sessionId, sendText);
       }
       else if (messageType === 'sst') {
         // sst类型 - 直接发送文本，如果是hard设备发送语音
         if (targetDevice.type === 'hard' && this.ttsService) {
-          await this.sendTtsAudio(targetDevice.connection, sessionId, text);
+          await this.sendTtsAudio(targetDevice.connection, sessionId, sendText);
         } else {
-          this.sendSttResponse(targetDevice.connection, sessionId, text);
+          this.sendSttResponse(targetDevice.connection, sessionId, sendText);
         }
-      }
-      else if (messageType === 'llm') {
-        //generateLlmResponse
-        let llmResponse = await this.generateLlmResponse(ws, text);
-        // sst类型 - 直接发送文本，如果是hard设备发送语音
-        if (targetDevice.type === 'hard' && this.ttsService) {
-          await this.sendTtsAudio(targetDevice.connection, sessionId, llmResponse);
-        } else {
-          this.sendSttResponse(targetDevice.connection, sessionId, llmResponse);
+      } else if (messageType === 'mcp') {
+        //Tool Trans
+        let toolApi = messageData.name;
+        if (!toolApi) {
+          this.sendError(ws, `消息处理失败: No Tool`, ws.sessionId);
+
         }
-      }
-      else if (messageType === 'mcp') {
-
-        let payload1 = {
-          "jsonrpc": "2.0",
-          "id": 2,
-          "method": "tools/list",
+        // 🔧 客户端工具 #1: self.get_device_status
+        // 🔧 客户端工具 #2: self.audio_speaker.set_volume
+        // 🔧 客户端工具 #3: self.screen.set_brightness
+        // 🔧 客户端工具 #4: self.screen.set_theme
+        // 🔧 客户端工具 #5: self.camera.take_photo
+        // 🔧 客户端工具 #6: self.system.reconfigure_wifi
+        let toolApiMap = {
+          "volume": "self.audio_speaker.set_volume",
+          "brightness": "self.screen.set_brightness",
+          "theme": "self.screen.set_theme",
+          "photo": "self.camera.take_photo",
+          "wifi": "self.system.reconfigure_wifi"
         };
-
-        let payload2 = {
-          "jsonrpc": "2.0",
-          "id": 2,
-          "method": "tools/list",
-        };
-
+        toolApi = toolApiMap[toolApi];
+        if (!toolApi) {
+          this.sendError(ws, `消息处理失败: No Tool ${toolApi}`, ws.sessionId);
+          return;
+        }
         const exeCmd =
         {
           "jsonrpc": "2.0",
           "id": 3,
           "method": "tools/call",
           "params": {
-            "name": "self.get_device_status", // 要调用的工具名称
-            "arguments": {
-            }
+            "name": toolApi, // 要调用的工具名称
+            "arguments": messageData.params || {}
           }
         }
         this.sendMessage(targetDevice.connection, {
