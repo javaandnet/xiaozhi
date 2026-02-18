@@ -1,874 +1,527 @@
-class XiaoZhiClient {
-    constructor() {
-        this.ws = null;
-        this.isConnected = false;
-        this.isConnecting = false;
-        this.clientId = null; // 存储当前客户端ID
+// 创建Vue应用实例
+const { createApp, ref, reactive, computed, onMounted } = Vue;
 
-        // DOM元素
-        this.elements = {
-            statusIndicator: document.getElementById('statusIndicator'),
-            statusText: document.getElementById('statusText'),
-            connectBtn: document.getElementById('connectBtn'),
-            disconnectBtn: document.getElementById('disconnectBtn'),
-            reconnectBtn: document.getElementById('reconnectBtn'),
-            messageInput: document.getElementById('messageInput'),
-            sendBtn: document.getElementById('sendBtn'),
-            chatContainer: document.getElementById('chatContainer'),
-            clearBtn: document.getElementById('clearBtn'),
-            // 服务器配置元素
-            serverUrlInput: document.getElementById('serverUrlInput'),
-            saveServerBtn: document.getElementById('saveServerBtn'),
-            clientIdDisplay: document.getElementById('clientIdDisplay'),
-            // RTN相关元素
-            rtnClientSelect: document.getElementById('rtnClientSelect'),
-            rtnDataInput: document.getElementById('rtnDataInput'),
+const app = createApp({
+    setup() {
+        // 响应式数据
+        const ws = ref(null);
+        const isConnected = ref(false);
+        const isConnecting = ref(false);
+        const clientId = ref(null);
 
-            // 好友消息相关元素
-            friendClientSelect: document.getElementById('friendClientSelect'),
-            friendMessageType: document.getElementById('friendMessageType'),
-            friendDataInput: document.getElementById('friendDataInput'),
-            sendFriendBtn: document.getElementById('sendFriendBtn'),
-            friendMessages: document.getElementById('friendMessages'),
-            friendMessagesList: document.getElementById('friendMessagesList'),
-            // 设备列表相关元素
-            refreshDevicesBtn: document.getElementById('refreshDevicesBtn'),
-            devicesList: document.getElementById('devicesList')
-        };
+        // 设备管理数据
+        const devices = ref([]);
+        const loading = ref(false);
+        const searchKeyword = ref('');
+        const filterStatus = ref('');
+        const filterType = ref('');
+        const currentPage = ref(1);
+        const pageSize = ref(20);
+        const selectedDevices = ref([]);
 
-        // 服务器配置
-        this.serverConfig = {
-            httpServerUrl: localStorage.getItem('httpServerUrl') || 'http://localhost:8003',
-            websocketUrl: null  // 通过OTA接口获取
-        };
+        // 设备详情抽屉
+        const deviceDetailVisible = ref(false);
+        const currentDevice = ref(null);
 
-        // 初始化服务器地址显示
-        this.updateClientInfoDisplay();
+        // 折叠面板状态
+        const activeCollapse = ref(['connection', 'logs']);
 
-        this.setupEventListeners();
-        this.updateUI();
+        // 系统日志
+        const systemLogs = ref([
+            { id: 1, time: new Date().toLocaleTimeString(), message: '系统初始化完成', type: 'info' }
+        ]);
 
-        // 页面加载后自动连接
-        setTimeout(() => this.autoConnect(), 500);
-    }
+        // 统计数据
+        const deviceStats = computed(() => {
+            const total = devices.value.length;
+            const online = devices.value.filter(d => d.status === 'online').length;
+            const offline = total - online;
+            const esp32 = devices.value.filter(d => d.type === 'esp32' || d.ip !== '192.168.1.55').length;
 
-    // 测试服务器连接
-    async testConnection() {
-        this.addSystemMessage('🔍 正在测试服务器连接...');
-
-        try {
-            const testUrl = `${this.serverConfig.httpServerUrl}/xiaozhi/ota/`;
-            this.addSystemMessage(`测试地址: ${testUrl}`);
-
-            const response = await fetch(testUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-
-            this.addSystemMessage(`✅ 服务器响应: ${response.status} ${response.statusText}`);
-
-            if (response.ok) {
-                const data = await response.json();
-                this.addSystemMessage(`✅ OTA接口返回数据:`, data);
-                if (data.websocket_url) {
-                    this.addSystemMessage(`✅ 成功获取WebSocket地址: ${data.websocket_url}`);
-                }
-            }
-        } catch (error) {
-            this.addSystemMessage(`❌ 测试失败: ${error.message}`);
-            console.error('测试连接错误:', error);
-        }
-    }
-
-    // 自动连接
-    async autoConnect() {
-        this.addSystemMessage('🚀 正在自动连接服务器...');
-        await this.connect();
-    }
-
-    // 设置事件监听器
-    setupEventListeners() {
-        // 服务器配置
-        this.elements.saveServerBtn.addEventListener('click', () => this.saveServerConfig());
-        this.elements.serverUrlInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.saveServerConfig();
-            }
+            return { total, online, offline, esp32 };
         });
 
-        // 连接按钮
-        this.elements.connectBtn.addEventListener('click', () => this.connect());
+        // 过滤后的设备列表
+        const filteredDevices = computed(() => {
+            let result = [...devices.value];
 
-        // 测试连接按钮
-        this.elements.testBtn = document.getElementById('testBtn');
-        this.elements.testBtn.addEventListener('click', () => this.testConnection());
-
-        // 断开连接按钮
-        this.elements.disconnectBtn.addEventListener('click', () => this.disconnect());
-
-        // 重新连接按钮
-        this.elements.reconnectBtn.addEventListener('click', () => this.reconnect());
-
-        // 发送按钮
-        this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-
-        // 回车发送
-        this.elements.messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.sendMessage();
-            }
-        });
-
-        // 清空聊天记录
-        this.elements.clearBtn.addEventListener('click', () => this.clearChat());
-
-
-
-
-
-        // 设备列表刷新
-        this.elements.refreshDevicesBtn.addEventListener('click', () => this.refreshDevicesList());
-
-        // 好友消息发送
-        this.elements.sendFriendBtn.addEventListener('click', () => this.sendFriendMessage());
-
-        // 好友消息输入框回车发送
-        this.elements.friendDataInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.sendFriendMessage();
-            }
-        });
-    }
-
-    // 更新UI状态
-    updateUI() {
-        // 更新连接状态指示器
-        if (this.isConnected) {
-            this.elements.statusIndicator.classList.add('connected');
-            this.elements.statusText.textContent = '已连接';
-        } else {
-            this.elements.statusIndicator.classList.remove('connected');
-            this.elements.statusText.textContent = this.isConnecting ? '连接中...' : '未连接';
-        }
-
-        // 更新按钮状态
-        this.elements.connectBtn.disabled = this.isConnected || this.isConnecting;
-        this.elements.testBtn.disabled = this.isConnecting;
-        this.elements.disconnectBtn.disabled = !this.isConnected;
-        this.elements.reconnectBtn.disabled = this.isConnecting;
-        this.elements.sendBtn.disabled = !this.isConnected;
-        this.elements.messageInput.disabled = !this.isConnected;
-
-
-        // 好友消息按钮状态
-        this.elements.sendFriendBtn.disabled = !this.isConnected;
-        this.elements.friendClientSelect.disabled = !this.isConnected;
-        this.elements.friendDataInput.disabled = !this.isConnected;
-        // 设备列表按钮状态
-        this.elements.refreshDevicesBtn.disabled = !this.isConnected;
-
-        // 服务器配置按钮状态
-        this.elements.saveServerBtn.disabled = this.isConnecting;
-
-        // 更新按钮文本
-        if (this.isConnecting) {
-            this.elements.connectBtn.innerHTML = '<span class="loading"></span> 连接中...';
-        } else {
-            this.elements.connectBtn.innerHTML = '🔗 连接服务器';
-        }
-    }
-
-    // 保存服务器配置
-    saveServerConfig() {
-        const newUrl = this.elements.serverUrlInput.value.trim();
-
-        if (!newUrl) {
-            this.addSystemMessage('⚠️ 请输入服务器地址');
-            return;
-        }
-
-        // 简单的URL格式验证 - 现在接受 HTTP 地址
-        if (!newUrl.startsWith('http://') && !newUrl.startsWith('https://')) {
-            this.addSystemMessage('⚠️ 服务器地址必须以 http:// 或 https:// 开头');
-            return;
-        }
-
-        // 保存到配置和localStorage
-        this.serverConfig.httpServerUrl = newUrl;
-        localStorage.setItem('httpServerUrl', newUrl);
-
-        // 清除之前获取的WebSocket URL
-        this.serverConfig.websocketUrl = null;
-
-        // 更新显示
-        this.updateClientInfoDisplay();
-
-        // 如果当前已连接，提示需要重新连接
-        if (this.isConnected) {
-            this.addSystemMessage('ℹ️ 服务器地址已更新，如需使用新地址请重新连接');
-        } else {
-            this.addSystemMessage(`✅ 服务器地址已保存: ${newUrl}`);
-        }
-
-        console.log('服务器地址已更新:', newUrl);
-    }
-
-    // 更新客户端信息显示
-    updateClientInfoDisplay() {
-        if (this.elements.serverUrlInput) {
-            this.elements.serverUrlInput.value = this.serverConfig.httpServerUrl;
-        }
-        // 显示客户端ID和WebSocket URL
-        if (this.elements.clientIdDisplay) {
-            let displayText = '';
-            if (this.clientId) {
-                displayText = `ClientID: ${this.clientId}`;
-            }
-            if (this.serverConfig.websocketUrl) {
-                displayText += displayText ? ` | WebSocket: ${this.serverConfig.websocketUrl}` : `WebSocket: ${this.serverConfig.websocketUrl}`;
-            }
-            this.elements.clientIdDisplay.textContent = displayText;
-            this.elements.clientIdDisplay.style.color = this.clientId ? '#28a745' : '#6c757d';
-        }
-    }
-
-    // 连接到服务器
-    async connect() {
-        if (this.isConnected || this.isConnecting) return;
-
-        this.isConnecting = true;
-        this.updateUI();
-        this.addSystemMessage('正在获取服务器配置...');
-
-        // 调试信息
-        console.log('当前服务器配置:', this.serverConfig);
-
-        try {
-            // 第一步：通过OTA接口获取WebSocket URL
-            const otaUrl = `${this.serverConfig.httpServerUrl}/xiaozhi/ota/`;
-            this.addSystemMessage(`正在访问: ${otaUrl}`);
-
-            // console.log('发送OTA请求到:', otaUrl);
-
-            const otaResponse = await fetch(otaUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!otaResponse.ok) {
-                const errorText = await otaResponse.text();
-                throw new Error(`OTA接口请求失败 (${otaResponse.status}): ${errorText}`);
+            // 关键词搜索
+            if (searchKeyword.value) {
+                const keyword = searchKeyword.value.toLowerCase();
+                result = result.filter(device =>
+                    device.clientId?.toLowerCase().includes(keyword) ||
+                    device.deviceId?.toLowerCase().includes(keyword) ||
+                    device.ip?.toLowerCase().includes(keyword)
+                );
             }
 
-            const otaData = await otaResponse.json();
-
-            if (!otaData.websocket_url) {
-                throw new Error('OTA接口未返回websocket_url');
+            // 状态筛选
+            if (filterStatus.value) {
+                result = result.filter(device => device.status === filterStatus.value);
             }
 
-            this.serverConfig.websocketUrl = otaData.websocket_url;
-            this.updateClientInfoDisplay();
-            this.addSystemMessage(`✅ 获取到WebSocket地址: ${otaData.websocket_url}`);
-
-            // 连接成功
-            this.isConnected = true;
-            this.addSystemMessage('✅ 连接成功！');
-            this.connectWebSocket();
-
-            // 获取设备信息
-            this.updateDeviceInfo();
-
-        } catch (error) {
-            this.addSystemMessage(`❌ 连接失败: ${error.message}`);
-            console.error('连接错误详细信息:', {
-                message: error.message,
-                stack: error.stack,
-                serverUrl: this.serverConfig.httpServerUrl
-            });
-
-            // 提供具体的解决建议
-            if (error.message.includes('Failed to fetch')) {
-                this.addSystemMessage('💡 提示: 请检查网络连接或服务器地址是否正确');
-            } else if (error.message.includes('404')) {
-                this.addSystemMessage('💡 提示: OTA接口路径可能不正确，请确认服务器已启动');
-            } else if (error.message.includes('CORS')) {
-                this.addSystemMessage('💡 提示: 可能存在跨域问题，请检查服务器CORS配置');
-            }
-        } finally {
-            this.isConnecting = false;
-            this.updateUI();
-        }
-    }
-
-    // 连接WebSocket用于实时通信
-    connectWebSocket() {
-        if (this.ws) {
-            this.ws.close();
-        }
-
-        // 构造带参数的WebSocket URL，表明连接类型为web
-        const wsUrl = new URL(`ws://${window.location.host}/ws`);
-        wsUrl.searchParams.append('client_type', 'web');
-        wsUrl.searchParams.append('timestamp', Date.now());
-
-        this.ws = new WebSocket(wsUrl.toString());
-
-        // 在控制台显示连接信息
-        console.log('WebSocket连接信息:', {
-            url: wsUrl.toString(),
-            clientType: 'web',
-            timestamp: new Date().toISOString()
-        });
-
-        this.ws.onopen = () => {
-            console.log('WebSocket连接已建立');
-        };
-
-        this.ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                console.log('收到WebSocket消息:', message);
-                this.handleServerMessage(message);
-            } catch (error) {
-                console.error('解析WebSocket消息失败:', error);
-            }
-        };
-
-        this.ws.onclose = () => {
-            console.log('WebSocket连接已关闭');
-        };
-
-        this.ws.onerror = (error) => {
-            console.error('WebSocket错误:', error);
-        };
-    }
-
-    // 更新连接状态
-    updateConnectionStatus(status) {
-        this.isConnected = status.connected;
-        this.elements.deviceId.textContent = status.deviceId || '-';
-        this.elements.sessionId.textContent = status.sessionId || '-';
-        this.updateUI();
-    }
-
-    // 处理服务器消息
-    handleServerMessage(message) {
-        console.log('收到服务器消息:', message);
-
-        // 如果消息包含from字段，说明是好友消息
-        if (message.from) {
-            this.handleFriendMessage(message);
-            return;
-        }
-
-        switch (message.type) {
-            case 'connection_ack':
-                // 连接确认，获取clientId
-                if (message.clientId) {
-                    this.clientId = message.clientId;
-                    this.updateClientInfoDisplay();
-                    this.addSystemMessage(`✅ 已获取客户端ID: ${this.clientId}`);
-                }
-                break;
-            case 'hello':
-                if (message.session_id) {
-                    this.elements.sessionId.textContent = message.session_id;
-                    this.addSystemMessage(`🤝 握手成功，会话ID: ${message.session_id}`);
-                }
-                break;
-
-            case 'stt':
-                this.addBotMessage(`${message.text}`);
-                break;
-
-            case 'llm':
-                this.addBotMessage(`🤖 ${message.text}`);
-                break;
-
-            case 'tts':
-                // TTS状态消息，可以选择是否显示
-                console.log('TTS状态:', message.state);
-                break;
-
-            default:
-                this.addSystemMessage(`收到未知类型消息: ${message.type}`);
-                console.log('未知消息:', message);
-        }
-    }
-
-    // 处理好友消息
-    handleFriendMessage(message) {
-        // console.log('收到好友消息:', message);
-
-        const fromClientId = message.from || '未知客户端';
-        const data = message.data || '';
-        const timestamp = message.timestamp ? new Date(message.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN');
-
-        // 显示收到的好友消息
-        this.addSystemMessage(`📬 收到来自 ${fromClientId} 的好友消息: ${data}`);
-
-        // 添加到好友消息记录
-        this.addFriendMessageRecord(fromClientId, data, timestamp, 'received');
-
-        // 显示好友消息面板
-        this.showFriendMessagesPanel();
-    }
-
-    // 处理好友消息确认
-    handleFriendAck(message) {
-        console.log('收到好友消息确认:', message);
-
-        const toClientId = message.to || '未知客户端';
-        const data = message.data || '';
-        const timestamp = message.timestamp ? new Date(message.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN');
-        const status = message.status || 'unknown';
-
-        // 显示发送确认
-        this.addSystemMessage(`✅ 好友消息已发送给 ${toClientId} (状态: ${status})`);
-
-        // 添加到好友消息记录
-        this.addFriendMessageRecord(toClientId, data, timestamp, 'sent');
-
-        // 显示好友消息面板
-        this.showFriendMessagesPanel();
-    }
-
-    // 显示好友消息面板
-    showFriendMessagesPanel() {
-        if (this.elements.friendMessages) {
-            this.elements.friendMessages.style.display = 'block';
-        }
-    }
-
-    // 添加好友消息记录
-    addFriendMessageRecord(clientId, message, timestamp, type) {
-        if (!this.elements.friendMessagesList) return;
-
-        const recordDiv = document.createElement('div');
-        recordDiv.style.padding = '8px';
-        recordDiv.style.borderBottom = '1px solid #e9ecef';
-        recordDiv.style.fontSize = '12px';
-
-        const typeIcon = type === 'sent' ? '📤' : '📥';
-        const typeText = type === 'sent' ? '发送' : '接收';
-        const textColor = type === 'sent' ? '#007bff' : '#28a745';
-
-        recordDiv.innerHTML = `
-            <div style="color: ${textColor}; font-weight: bold; margin-bottom: 3px;">
-                ${typeIcon} ${typeText} | 目标: ${clientId}
-            </div>
-            <div style="color: #495057; margin-bottom: 3px;">${message}</div>
-            <div style="color: #6c757d; font-size: 11px;">${timestamp}</div>
-        `;
-
-        this.elements.friendMessagesList.appendChild(recordDiv);
-
-        // 限制记录数量，最多显示20条
-        const records = this.elements.friendMessagesList.children;
-        if (records.length > 20) {
-            this.elements.friendMessagesList.removeChild(records[0]);
-        }
-
-        // 滚动到底部
-        this.elements.friendMessages.scrollTop = this.elements.friendMessages.scrollHeight;
-    }
-
-    // 更新设备信息
-    async updateDeviceInfo() {
-        if (this.isConnected) {
-            setTimeout(() => {
-                this.refreshDevicesList();
-                this.addSystemMessage('🔄 已自动刷新设备列表');
-            }, 1000); // 延迟1秒确保连接完全建立
-        }
-    }
-
-    // 断开连接
-    async disconnect() {
-        try {
-            const response = await fetch(`${this.serverConfig.httpServerUrl}/api/disconnect`, {
-                method: 'POST'
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.isConnected = false;
-                if (this.ws) {
-                    this.ws.close();
-                    this.ws = null;
-                }
-                this.addSystemMessage('🔌 已断开连接');
-            }
-        } catch (error) {
-            console.error('断开连接失败:', error);
-        } finally {
-            this.updateUI();
-        }
-    }
-
-    // 重新连接
-    async reconnect() {
-        await this.disconnect();
-        setTimeout(() => this.connect(), 1000);
-    }
-
-    // 发送消息
-    async sendMessage() {
-        const text = this.elements.messageInput.value.trim();
-
-        if (!text) {
-            this.elements.messageInput.focus();
-            return;
-        }
-
-        if (!this.isConnected) {
-            this.addSystemMessage('⚠️ 请先连接到服务器');
-            return;
-        }
-
-        // 显示用户消息
-        this.addUserMessage(text);
-
-        // 清空输入框
-        this.elements.messageInput.value = '';
-        this.elements.messageInput.focus();
-
-        try {
-            const response = await fetch(`${this.serverConfig.httpServerUrl}/api/send`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ text })
-            });
-
-            const result = await response.json();
-
-            if (!result.success) {
-                this.addSystemMessage(`❌ 发送失败: ${result.message}`);
-            }
-        } catch (error) {
-            this.addSystemMessage(`❌ 发送失败: ${error.message}`);
-            console.error('发送消息错误:', error);
-        }
-    }
-
-
-    // 发送好友消息
-    async sendFriendMessage() {
-        const client = this.elements.friendClientSelect.value;
-        const messageType = this.elements.friendMessageType.value;
-        const data = this.elements.friendDataInput.value.trim();
-
-        if (!client || !data) {
-            this.addSystemMessage('⚠️ 请选择目标客户端并输入消息内容');
-            if (!client) this.elements.friendClientSelect.focus();
-            else this.elements.friendDataInput.focus();
-            return;
-        }
-
-        if (!this.isConnected) {
-            this.addSystemMessage('⚠️ 请先连接到服务器');
-            return;
-        }
-
-        // 根据消息类型构建不同的消息格式
-        let messageToSend;
-        let displayMessage;
-
-        // 构建好友消息格式，data字段包含具体的消息类型信息
-        const structuredData = {
-            type: messageType,
-            content: data,
-            timestamp: new Date().toISOString()
-        };
-
-        // 根据不同消息类型添加额外字段
-        switch (messageType) {
-            case 'tts':
-                structuredData.data = data;
-                displayMessage = `语音消息`;
-                break;
-
-            case 'sst':
-                structuredData.data = data;
-                displayMessage = `文本消息`;
-                break;
-
-            case 'llm':
-                structuredData.data = data;
-                displayMessage = `AI对话消息`;
-                break;
-
-            case 'mcp':
-                structuredData.data = data;
-                displayMessage = `控制命令`;
-                break;
-
-            default:
-                displayMessage = `好友消息`;
-        }
-
-        // 统一使用friend消息类型发送
-        messageToSend = {
-            type: "friend",
-            clientid: client,
-            data: structuredData
-        };
-
-        // 显示消息发送
-        this.addSystemMessage(`💌 发送${displayMessage}到 ${client}: ${data}`);
-
-        // 清空输入框
-        this.elements.friendDataInput.value = '';
-        this.elements.friendDataInput.focus();
-
-        try {
-            // 通过WebSocket发送消息
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify(messageToSend));
-                this.addSystemMessage(`📤 ${displayMessage}已通过WebSocket发送`);
-            }
-            console.error('发送消息错误:', "NO SOCKET");
-        } catch (error) {
-            this.addSystemMessage(`❌ ${displayMessage}发送失败: ${error.message}`);
-            console.error('发送消息错误:', error);
-        }
-    }
-
-    // 刷新设备列表
-    async refreshDevicesList() {
-        if (!this.isConnected) {
-            this.addSystemMessage('⚠️ 请先连接到服务器');
-            return;
-        }
-
-        try {
-            this.elements.devicesList.innerHTML = '<div style="text-align: center; padding: 20px;"><span class="loading"></span> 正在获取设备列表...</div>';
-
-            const response = await fetch(`${this.serverConfig.httpServerUrl}/api/devices`);
-            const result = await response.json();
-            console.log('设备列表:', result);
-            if (result.success) {
-                this.displayDevicesList(result);
-                this.addSystemMessage('✅ 设备列表刷新成功');
-            } else {
-                throw new Error(result.message);
-            }
-        } catch (error) {
-            this.elements.devicesList.innerHTML = `<div style="text-align: center; color: #dc3545; padding: 20px;">❌ 获取设备列表失败: ${error.message}</div>`;
-            this.addSystemMessage(`❌ 获取设备列表失败: ${error.message}`);
-        }
-    }
-
-    // 显示设备列表
-    displayDevicesList(devicesData) {
-        let html = '';
-
-        // 显示统计信息
-        if (devicesData && devicesData.data) {
-            const data = devicesData.data;
-
-            // 过滤掉本客户端设备（以node_client_开头的设备）
-            // const otherDevices = data.devices ? data.devices.filter(device =>
-            //     !device.device_id.startsWith('node_client_')
-            // ) : [];
-            const otherDevices = data;
-            console.log('其他设备列表:', otherDevices);
-            const otherDeviceCount = otherDevices.length;
-            const totalCount = data.total_devices || 0;
-
-            html += `
-                <div style="margin-bottom: 15px; padding: 10px; background: #e8f5e8; border-radius: 5px; border-left: 3px solid #28a745;">
-                    <div style="font-weight: bold; color: #155724;">📊 设备统计</div>
-                    <div style="margin-top: 5px; font-size: 13px;">
-                        其他设备数: <strong>${otherDeviceCount}</strong> 个<br>
-                        总设备数: ${totalCount} 个<br>
-                        服务器时间: ${new Date(data.timestamp).toLocaleString('zh-CN')}<br>
-                        WebSocket端口: ${data.server_info?.websocket_port || 'N/A'}<br>
-                        HTTP端口: ${data.server_info?.http_port || 'N/A'}
-                    </div>
-                </div>
-            `;
-
-            // 显示其他设备详情
-            if (otherDevices.length > 0) {
-                html += '<div style="font-weight: bold; margin-bottom: 10px; color: #495057;">📋 其他活跃设备列表:</div>';
-
-                otherDevices.forEach((device, index) => {
-                    const connectedTime = device.connected_at ? new Date(device.connected_at).toLocaleString('zh-CN') : 'N/A';
-                    const lastActivity = device.lastActivity ? new Date(device.lastActivity).toLocaleString('zh-CN') : 'N/A';
-
-                    // 根据设备类型设置不同的颜色
-                    const isEsp32 = device.client_ip !== '192.168.1.55'; // 非Node.js服务器IP的设备认为是ESP32
-                    const borderColor = isEsp32 ? '#28a745' : '#6c757d';
-                    const titleColor = isEsp32 ? '#28a745' : '#6c757d';
-                    const deviceType = isEsp32 ? 'ESP32设备' : '其他设备';
-
-                    html += `
-                        <div style="margin-bottom: 8px; padding: 8px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid ${borderColor};">
-                            <div style="font-weight: bold; color: ${titleColor}; font-size: 13px;">📱 ${deviceType} ${index + 1}</div>
-                            <div style="margin-top: 5px; font-family: monospace; font-size: 12px; color: #495057;">
-                                设备ID: ${device.clientId}<br>
-                                客户端IP: ${device.ip}<br>
-                                连接时间: ${connectedTime}<br>
-                                最后活动: ${lastActivity}
-                            </div>
-                        </div>
-                    `;
+            // 类型筛选
+            if (filterType.value) {
+                result = result.filter(device => {
+                    if (filterType.value === 'esp32') {
+                        return device.ip !== '192.168.1.55' && device.type !== 'web';
+                    } else if (filterType.value === 'web') {
+                        return device.type === 'web';
+                    } else if (filterType.value === 'hard') {
+                        return device.type === 'hard';
+                    }
+                    return true;
                 });
-            } else {
-                html += '<div style="text-align: center; color: #6c757d; padding: 15px;">暂无其他设备连接</div>';
             }
 
-            // 如果有过滤掉的本机设备，显示提示
-            const filteredDevices = data.devices ? data.devices.filter(device =>
-                device.device_id.startsWith('node_client_')
-            ) : [];
-
-            if (filteredDevices.length > 0) {
-                html += `
-                    <div style="margin-top: 15px; padding: 8px; background: #fff3cd; border-radius: 5px; border-left: 3px solid #ffc107; font-size: 12px; color: #856404;">
-                        ℹ️ 已过滤 ${filteredDevices.length} 个本机客户端设备
-                    </div>
-                `;
-            }
-
-
-            // 更新好友消息下拉框选项
-            this.updateFriendClientOptions(otherDevices);
-        } else {
-            html = '<div style="text-align: center; color: #6c757d; padding: 20px;">暂无设备信息</div>';
-
-        }
-
-        this.elements.devicesList.innerHTML = html;
-    }
-
-
-
-    // 更新好友消息目标客户端下拉框选项
-    updateFriendClientOptions(clients) {
-        const selectElement = this.elements.friendClientSelect;
-
-        // 保存当前选中的值
-        const currentValue = selectElement.value;
-
-        // 清空现有选项（保留第一个提示选项）
-        selectElement.innerHTML = '<option value="">请选择目标客户端</option>';
-
-        // 过滤掉本机clientId
-        const filteredClients = clients.filter(client => {
-            const clientId = client.clientId || client.deviceId;
-            return clientId !== this.clientId;
+            return result;
         });
 
-        // 添加客户端选项
-        if (filteredClients && filteredClients.length > 0) {
-            filteredClients.forEach(client => {
-                const option = document.createElement('option');
-                option.value = client.clientId || client.deviceId;
+        // 服务器配置
+        const serverConfig = reactive({
+            httpServerUrl: localStorage.getItem('httpServerUrl') || 'http://localhost:8003',
+            websocketUrl: null
+        });
 
-                // 显示客户端信息
-                const clientInfo = client.clientId ?
-                    `[客户端] ${client.clientId.substring(0, 8)}...` :
-                    `[设备] ${client.deviceId || '未知'}`;
-                option.textContent = clientInfo;
+        // DOM元素引用
+        const elements = {
+            statusIndicator: ref(null),
+            statusText: ref(null),
+            connectBtn: ref(null),
+            disconnectBtn: ref(null),
+            reconnectBtn: ref(null),
+            serverUrlInput: ref(null),
+            saveServerBtn: ref(null),
+            clientIdDisplay: ref(null),
+            testBtn: ref(null)
+        };
 
-                selectElement.appendChild(option);
+        // 方法定义
+        const addSystemLog = (message, type = 'info') => {
+            systemLogs.value.unshift({
+                id: Date.now(),
+                time: new Date().toLocaleTimeString(),
+                message,
+                type
             });
 
-            // 如果之前选中的值还在选项中，恢复选择
-            if (currentValue && Array.from(selectElement.options).some(opt => opt.value === currentValue)) {
-                selectElement.value = currentValue;
+            // 限制日志数量
+            if (systemLogs.value.length > 100) {
+                systemLogs.value.pop();
+            }
+        };
+
+        const clearSystemLogs = () => {
+            systemLogs.value = [
+                { id: Date.now(), time: new Date().toLocaleTimeString(), message: '日志已清空', type: 'info' }
+            ];
+        };
+
+        const updateClientInfoDisplay = () => {
+            if (elements.clientIdDisplay.value) {
+                let displayText = '';
+                if (clientId.value) {
+                    displayText = `ClientID: ${clientId.value}`;
+                }
+                if (serverConfig.websocketUrl) {
+                    displayText += displayText ? ` | WebSocket: ${serverConfig.websocketUrl}` : `WebSocket: ${serverConfig.websocketUrl}`;
+                }
+                elements.clientIdDisplay.value.textContent = displayText;
+                elements.clientIdDisplay.value.style.color = clientId.value ? '#28a745' : '#6c757d';
+            }
+        };
+
+        const updateUI = () => {
+            // 更新连接状态指示器
+            if (elements.statusIndicator.value && elements.statusText.value) {
+                if (isConnected.value) {
+                    elements.statusIndicator.value.classList.add('connected');
+                    elements.statusText.value.textContent = '已连接';
+                } else {
+                    elements.statusIndicator.value.classList.remove('connected');
+                    elements.statusText.value.textContent = isConnecting.value ? '连接中...' : '未连接';
+                }
             }
 
-            this.addSystemMessage(`🔄 好友消息目标客户端列表已更新，共 ${filteredClients.length} 个可选客户端`);
-        } else {
-            this.addSystemMessage('⚠️ 暂无可选的目标客户端');
-        }
-    }
+            // 更新按钮状态
+            if (elements.connectBtn.value) elements.connectBtn.value.disabled = isConnected.value || isConnecting.value;
+            if (elements.testBtn.value) elements.testBtn.value.disabled = isConnecting.value;
+            if (elements.disconnectBtn.value) elements.disconnectBtn.value.disabled = !isConnected.value;
+            if (elements.reconnectBtn.value) elements.reconnectBtn.value.disabled = isConnecting.value;
+            if (elements.saveServerBtn.value) elements.saveServerBtn.value.disabled = isConnecting.value;
 
-    // 添加用户消息
-    addUserMessage(text) {
-        this.addMessage(text, 'user');
-    }
-
-    // 添加机器人消息
-    addBotMessage(text) {
-        this.addMessage(text, 'bot');
-    }
-
-    // 添加系统消息
-    addSystemMessage(text) {
-        this.addMessage(text, 'system');
-    }
-
-    // 添加消息到聊天区域
-    addMessage(content, type) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}`;
-
-        const headerDiv = document.createElement('div');
-        headerDiv.className = 'message-header';
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-        contentDiv.textContent = content;
-
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('zh-CN', {
-            hour12: false,
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-
-        switch (type) {
-            case 'user':
-                headerDiv.textContent = `我 · ${timeString}`;
-                break;
-            case 'bot':
-                headerDiv.textContent = `小智 · ${timeString}`;
-                break;
-            case 'system':
-                headerDiv.textContent = timeString;
-                break;
-        }
-
-        messageDiv.appendChild(headerDiv);
-        messageDiv.appendChild(contentDiv);
-        this.elements.chatContainer.appendChild(messageDiv);
-
-        // 滚动到底部
-        this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
-    }
-
-    // 清空聊天记录
-    clearChat() {
-        const messages = this.elements.chatContainer.querySelectorAll('.message');
-        messages.forEach((msg, index) => {
-            // 保留第一条欢迎消息
-            if (index > 0) {
-                msg.remove();
+            // 更新按钮文本
+            if (elements.connectBtn.value) {
+                if (isConnecting.value) {
+                    elements.connectBtn.value.innerHTML = '<span class="loading"></span> 连接中...';
+                } else {
+                    elements.connectBtn.value.innerHTML = '🔗 连接服务器';
+                }
             }
+        };
+
+        const saveServerConfig = () => {
+            const newUrl = elements.serverUrlInput.value?.value?.trim();
+
+            if (!newUrl) {
+                addSystemLog('请输入服务器地址', 'error');
+                return;
+            }
+
+            if (!newUrl.startsWith('http://') && !newUrl.startsWith('https://')) {
+                addSystemLog('服务器地址必须以 http:// 或 https:// 开头', 'error');
+                return;
+            }
+
+            serverConfig.httpServerUrl = newUrl;
+            localStorage.setItem('httpServerUrl', newUrl);
+            serverConfig.websocketUrl = null;
+            updateClientInfoDisplay();
+
+            if (isConnected.value) {
+                addSystemLog('服务器地址已更新，如需使用新地址请重新连接', 'info');
+            } else {
+                addSystemLog(`服务器地址已保存: ${newUrl}`, 'success');
+            }
+        };
+
+        const connect = async () => {
+            if (isConnected.value || isConnecting.value) return;
+
+            isConnecting.value = true;
+            updateUI();
+            addSystemLog('正在获取服务器配置...');
+
+            try {
+                const otaUrl = `${serverConfig.httpServerUrl}/xiaozhi/ota/`;
+                addSystemLog(`正在访问: ${otaUrl}`);
+
+                const otaResponse = await fetch(otaUrl, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                if (!otaResponse.ok) {
+                    const errorText = await otaResponse.text();
+                    throw new Error(`OTA接口请求失败 (${otaResponse.status}): ${errorText}`);
+                }
+
+                const otaData = await otaResponse.json();
+
+                if (!otaData.websocket_url) {
+                    throw new Error('OTA接口未返回websocket_url');
+                }
+
+                serverConfig.websocketUrl = otaData.websocket_url;
+                updateClientInfoDisplay();
+                addSystemLog(`获取到WebSocket地址: ${otaData.websocket_url}`, 'success');
+
+                isConnected.value = true;
+                addSystemLog('连接成功！', 'success');
+                connectWebSocket();
+                refreshDevices();
+
+            } catch (error) {
+                addSystemLog(`连接失败: ${error.message}`, 'error');
+                if (error.message.includes('Failed to fetch')) {
+                    addSystemLog('提示: 请检查网络连接或服务器地址是否正确', 'info');
+                } else if (error.message.includes('404')) {
+                    addSystemLog('提示: OTA接口路径可能不正确，请确认服务器已启动', 'info');
+                }
+            } finally {
+                isConnecting.value = false;
+                updateUI();
+            }
+        };
+
+        const connectWebSocket = () => {
+            if (ws.value) {
+                ws.value.close();
+            }
+
+            const wsUrl = new URL(`ws://${window.location.host}/ws`);
+            wsUrl.searchParams.append('client_type', 'web');
+            wsUrl.searchParams.append('timestamp', Date.now());
+
+            ws.value = new WebSocket(wsUrl.toString());
+
+            ws.value.onopen = () => {
+                console.log('WebSocket连接已建立');
+                addSystemLog('WebSocket连接已建立', 'success');
+            };
+
+            ws.value.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    console.log('收到WebSocket消息:', message);
+                    handleServerMessage(message);
+                } catch (error) {
+                    console.error('解析WebSocket消息失败:', error);
+                }
+            };
+
+            ws.value.onclose = () => {
+                console.log('WebSocket连接已关闭');
+                addSystemLog('WebSocket连接已关闭', 'info');
+            };
+
+            ws.value.onerror = (error) => {
+                console.error('WebSocket错误:', error);
+                addSystemLog('WebSocket连接错误', 'error');
+            };
+        };
+
+        const handleServerMessage = (message) => {
+            console.log('收到服务器消息:', message);
+
+            switch (message.type) {
+                case 'connection_ack':
+                    if (message.clientId) {
+                        clientId.value = message.clientId;
+                        updateClientInfoDisplay();
+                        addSystemLog(`已获取客户端ID: ${clientId.value}`, 'success');
+                    }
+                    break;
+                case 'hello':
+                    if (message.session_id) {
+                        addSystemLog(`握手成功，会话ID: ${message.session_id}`, 'success');
+                    }
+                    break;
+                default:
+                    addSystemLog(`收到未知类型消息: ${message.type}`, 'info');
+            }
+        };
+
+        const disconnect = async () => {
+            try {
+                const response = await fetch(`${serverConfig.httpServerUrl}/api/disconnect`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    isConnected.value = false;
+                    if (ws.value) {
+                        ws.value.close();
+                        ws.value = null;
+                    }
+                    addSystemLog('已断开连接', 'success');
+                }
+            } catch (error) {
+                console.error('断开连接失败:', error);
+                addSystemLog(`断开连接失败: ${error.message}`, 'error');
+            } finally {
+                updateUI();
+            }
+        };
+
+        const reconnect = async () => {
+            await disconnect();
+            setTimeout(() => connect(), 1000);
+        };
+
+        const testConnection = async () => {
+            addSystemLog('正在测试服务器连接...');
+
+            try {
+                const testUrl = `${serverConfig.httpServerUrl}/xiaozhi/ota/`;
+                addSystemLog(`测试地址: ${testUrl}`);
+
+                const response = await fetch(testUrl, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                addSystemLog(`服务器响应: ${response.status} ${response.statusText}`, 'success');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addSystemLog(`OTA接口返回数据: ${JSON.stringify(data)}`, 'success');
+                    if (data.websocket_url) {
+                        addSystemLog(`成功获取WebSocket地址: ${data.websocket_url}`, 'success');
+                    }
+                }
+            } catch (error) {
+                addSystemLog(`测试失败: ${error.message}`, 'error');
+                console.error('测试连接错误:', error);
+            }
+        };
+
+        const refreshDevices = async () => {
+            if (!isConnected.value) {
+                addSystemLog('请先连接到服务器', 'error');
+                return;
+            }
+
+            loading.value = true;
+
+            try {
+                const response = await fetch(`${serverConfig.httpServerUrl}/api/devices`);
+                const result = await response.json();
+
+                if (result.success) {
+                    devices.value = result.data || [];
+                    addSystemLog(`设备列表刷新成功，共 ${devices.value.length} 个设备`, 'success');
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                addSystemLog(`获取设备列表失败: ${error.message}`, 'error');
+                devices.value = [];
+            } finally {
+                loading.value = false;
+            }
+        };
+
+        const handleSelectionChange = (selection) => {
+            selectedDevices.value = selection;
+        };
+
+        const handleBatchCommand = (command) => {
+            switch (command) {
+                case 'disconnect':
+                    // 批量断开连接逻辑
+                    addSystemLog(`选择了 ${selectedDevices.value.length} 个设备进行批量断开`, 'info');
+                    break;
+                case 'cleanup':
+                    // 清理离线设备逻辑
+                    addSystemLog('执行清理离线设备操作', 'info');
+                    break;
+            }
+        };
+
+        const showDeviceDetail = (device) => {
+            currentDevice.value = device;
+            deviceDetailVisible.value = true;
+        };
+
+        const disconnectDevice = async (device) => {
+            if (device.status !== 'online') {
+                addSystemLog('设备已离线', 'error');
+                return;
+            }
+
+            try {
+                // 这里应该调用实际的断开设备API
+                addSystemLog(`正在断开设备 ${device.clientId}`, 'info');
+                // 模拟断开操作
+                setTimeout(() => {
+                    device.status = 'offline';
+                    addSystemLog(`设备 ${device.clientId} 已断开连接`, 'success');
+                }, 1000);
+            } catch (error) {
+                addSystemLog(`断开设备失败: ${error.message}`, 'error');
+            }
+        };
+
+        const showAddDeviceDialog = () => {
+            // 添加设备对话框逻辑
+            addSystemLog('打开添加设备对话框', 'info');
+        };
+
+        const getDeviceTypeTag = (type) => {
+            switch (type) {
+                case 'esp32': return 'success';
+                case 'web': return 'primary';
+                case 'hard': return 'warning';
+                default: return 'info';
+            }
+        };
+
+        const getDeviceTypeName = (type) => {
+            switch (type) {
+                case 'esp32': return 'ESP32';
+                case 'web': return '网页客户端';
+                case 'hard': return '硬件设备';
+                default: return '未知设备';
+            }
+        };
+
+        const formatTime = (time) => {
+            if (!time) return '-';
+            return new Date(time).toLocaleString('zh-CN');
+        };
+
+        // 生命周期钩子
+        onMounted(() => {
+            // 初始化DOM元素引用
+            elements.statusIndicator.value = document.getElementById('statusIndicator');
+            elements.statusText.value = document.getElementById('statusText');
+            elements.connectBtn.value = document.getElementById('connectBtn');
+            elements.disconnectBtn.value = document.getElementById('disconnectBtn');
+            elements.reconnectBtn.value = document.getElementById('reconnectBtn');
+            elements.serverUrlInput.value = document.getElementById('serverUrlInput');
+            elements.saveServerBtn.value = document.getElementById('saveServerBtn');
+            elements.clientIdDisplay.value = document.getElementById('clientIdDisplay');
+            elements.testBtn.value = document.getElementById('testBtn');
+
+            // 初始化服务器地址显示
+            if (elements.serverUrlInput.value) {
+                elements.serverUrlInput.value.value = serverConfig.httpServerUrl;
+            }
+            updateClientInfoDisplay();
+            updateUI();
+
+            // 页面加载后自动连接
+            setTimeout(() => {
+                addSystemLog('正在自动连接服务器...');
+                connect();
+            }, 500);
         });
-        this.addSystemMessage('🗑️ 聊天记录已清空');
-    }
-}
 
-// 页面加载完成后初始化客户端
-document.addEventListener('DOMContentLoaded', () => {
-    window.xiaoZhiClient = new XiaoZhiClient();
+        // 返回响应式数据和方法
+        return {
+            // 响应式数据
+            isConnected,
+            isConnecting,
+            clientId,
+            devices,
+            loading,
+            searchKeyword,
+            filterStatus,
+            filterType,
+            currentPage,
+            pageSize,
+            selectedDevices,
+            deviceDetailVisible,
+            currentDevice,
+            activeCollapse,
+            systemLogs,
+            deviceStats,
+            filteredDevices,
+            serverConfig,
+
+            // 方法
+            addSystemLog,
+            clearSystemLogs,
+            updateClientInfoDisplay,
+            updateUI,
+            saveServerConfig,
+            connect,
+            disconnect,
+            reconnect,
+            testConnection,
+            refreshDevices,
+            handleSelectionChange,
+            handleBatchCommand,
+            showDeviceDetail,
+            disconnectDevice,
+            showAddDeviceDialog,
+            getDeviceTypeTag,
+            getDeviceTypeName,
+            formatTime
+        };
+    }
 });
 
-// 页面卸载时断开连接
-window.addEventListener('beforeunload', () => {
-    if (window.xiaoZhiClient && window.xiaoZhiClient.ws) {
-        window.xiaoZhiClient.ws.close();
-    }
+// 注册Element Plus
+app.use(ElementPlus);
+
+// 注册Element Plus图标
+Object.keys(ElementPlusIconsVue).forEach(key => {
+    app.component(key, ElementPlusIconsVue[key]);
 });
+
+// 挂载应用
+app.mount('#app');
