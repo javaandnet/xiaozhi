@@ -94,7 +94,7 @@ function formatDeviceInfo(device) {
     battery: device.battery,
     signal: device.signal,
     connectedAt: device.connectedAt,
-    lastSeen: device.lastSeen,
+    lastActivity: device.lastActivity,
     capabilities: device.capabilities || []
   };
 }

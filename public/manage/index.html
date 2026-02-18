@@ -142,6 +142,16 @@
             color: white;
         }
 
+        .btn-warning {
+            background: linear-gradient(90deg, #ffc107 0%, #e0a800 100%);
+            color: #212529;
+        }
+
+        .btn-warning:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 193, 7, 0.4);
+        }
+
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
@@ -350,6 +360,9 @@
             <div class="connection-buttons">
                 <button class="btn btn-success" id="connectBtn">
                     🔗 连接服务器
+                </button>
+                <button class="btn btn-warning" id="testBtn">
+                    🧪 测试连接
                 </button>
                 <button class="btn btn-danger" id="disconnectBtn" disabled>
                     🔌 断开连接

@@ -1,8 +1,6 @@
+import { spawn } from 'child_process';
 import opusPkg from 'opusscript';
 const OpusEncoder = opusPkg.default || opusPkg;
-import ffmpeg from 'fluent-ffmpeg';
-import { spawn } from 'child_process';
-import { Readable } from 'stream';
 
 /**
  * 音频转换工具类
@@ -26,10 +24,10 @@ class AudioConverter {
     return new Promise((resolve, reject) => {
       try {
         const opusFrames = [];
-        
+
         // 创建Opus编码器
         const encoder = new OpusEncoder(this.sampleRate, this.channels);
-        
+
         // 使用FFmpeg将MP3转换为PCM
         const ffmpegProcess = spawn('ffmpeg', [
           '-i', 'pipe:0',        // 从stdin读取
@@ -44,19 +42,19 @@ class AudioConverter {
 
         ffmpegProcess.stdout.on('data', (chunk) => {
           pcmBuffer = Buffer.concat([pcmBuffer, chunk]);
-          
+
           // 当PCM数据足够一帧时，进行Opus编码
           const frameBytes = this.frameSize * 2; // 16bit = 2 bytes per sample
-          
+
           while (pcmBuffer.length >= frameBytes) {
             const frame = pcmBuffer.slice(0, frameBytes);
             pcmBuffer = pcmBuffer.slice(frameBytes);
-            
+
             try {
               const opusFrame = encoder.encode(frame, this.frameSize);
               opusFrames.push(opusFrame);
             } catch (err) {
-              console.error('Opus编码帧失败:', err.message);
+              // console.error('Opus编码帧失败:', err.message);
             }
           }
         });
@@ -78,7 +76,7 @@ class AudioConverter {
             const frameBytes = this.frameSize * 2;
             const paddedBuffer = Buffer.alloc(frameBytes, 0);
             pcmBuffer.copy(paddedBuffer);
-            
+
             try {
               const opusFrame = encoder.encode(paddedBuffer, this.frameSize);
               opusFrames.push(opusFrame);
@@ -86,7 +84,7 @@ class AudioConverter {
               console.error('Opus编码最后一帧失败:', err.message);
             }
           }
-          
+
           resolve(opusFrames);
         });
 
@@ -120,7 +118,7 @@ class AudioConverter {
       try {
         const opusFrames = [];
         const encoder = new OpusEncoder(sampleRate, channels);
-        
+
         const ffmpegProcess = spawn('ffmpeg', [
           '-i', 'pipe:0',
           '-f', 's16le',
@@ -135,11 +133,11 @@ class AudioConverter {
         ffmpegProcess.stdout.on('data', (chunk) => {
           pcmBuffer = Buffer.concat([pcmBuffer, chunk]);
           const frameBytes = frameSize * 2;
-          
+
           while (pcmBuffer.length >= frameBytes) {
             const frame = pcmBuffer.slice(0, frameBytes);
             pcmBuffer = pcmBuffer.slice(frameBytes);
-            
+
             try {
               const opusFrame = encoder.encode(frame, this.frameSize);
               opusFrames.push(opusFrame);
@@ -165,7 +163,7 @@ class AudioConverter {
             const frameBytes = frameSize * 2;
             const paddedBuffer = Buffer.alloc(frameBytes, 0);
             pcmBuffer.copy(paddedBuffer);
-            
+
             try {
               const opusFrame = encoder.encode(paddedBuffer, this.frameSize);
               opusFrames.push(opusFrame);
@@ -173,7 +171,7 @@ class AudioConverter {
               console.error('Opus编码最后一帧失败:', err.message);
             }
           }
-          
+
           resolve(opusFrames);
         });
 

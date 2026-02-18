@@ -103,7 +103,7 @@ class DeviceManager {
     const removedDevices = [];
 
     for (const [clientId, device] of this.devices) {
-      if (new Date(device.lastSeen) < cutoffTime) {
+      if (new Date(device.lastActivity) < cutoffTime) {
         removedDevices.push(this.removeDevice(clientId));
       }
     }
@@ -201,7 +201,7 @@ class DeviceManager {
   getRecentActiveDevices(limit = 10) {
     const allDevices = this.getAllDevices();
     return allDevices
-      .sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen))
+      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity))
       .slice(0, limit);
   }
 
@@ -216,7 +216,7 @@ class DeviceManager {
       battery: device.battery,
       signal: device.signal,
       connectedAt: device.connectedAt,
-      lastSeen: device.lastSeen,
+      lastActivity: device.lastActivity,
       capabilities: device.capabilities
     }));
   }

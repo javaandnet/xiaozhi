@@ -17,6 +17,7 @@ import { logger } from './utils/logger.js';
 import LLMService from './core/services/llm.js';
 import SttService from './core/services/stt.js';
 import TTSService from './core/services/tts.js';
+import McpService from './core/services/mcp.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -68,6 +69,7 @@ const config = {
 const llmService = new LLMService(config);
 const ttsService = new TTSService(config);
 const sttService = new SttService(config.services?.stt || {});
+const mcpService = new McpService(config);
 const sessionManager = new SessionManager();
 const deviceManager = new DeviceManager();
 
@@ -77,7 +79,8 @@ initializeWebSocketHandler({
   sessionManager,
   llmService,
   ttsService,
-  sttService
+  sttService,
+  mcpService
 });
 
 // 初始化服务

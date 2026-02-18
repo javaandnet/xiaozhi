@@ -3,10 +3,10 @@
  * 用于测试客户端间消息传递功能
  */
 
-const WebSocket = require('ws');
+import WebSocket from 'ws';
 
 class FriendMessageTestClient {
-  constructor(clientId, url = 'ws://localhost:8000') {
+  constructor(clientId, url = 'ws://localhost:8003') {
     this.clientId = clientId;
     this.url = url;
     this.ws = null;
@@ -58,6 +58,7 @@ class FriendMessageTestClient {
     switch (message.type) {
       case 'connection_ack':
         console.log(`[${this.clientId}] ✓ 连接确认，我的clientId是: ${message.clientId}`);
+        this.actualClientId = message.clientId; // 保存服务器分配的真正clientId
         break;
         
       case 'friend':
@@ -84,10 +85,20 @@ class FriendMessageTestClient {
     }
   }
 
+  // 获取服务器分配的实际clientId
+  getActualClientId() {
+    return this.actualClientId;
+  }
+
   // 发送好友消息
   sendFriendMessage(targetClientId, data) {
     if (!this.isConnected) {
       console.error(`[${this.clientId}] 未连接到服务器`);
+      return false;
+    }
+
+    if (!this.actualClientId) {
+      console.error(`[${this.clientId}] 尚未获得服务器分配的clientId`);
       return false;
     }
 
@@ -163,18 +174,33 @@ async function runFriendMessageTest() {
     console.log('\n=== 测试步骤 1: 等待连接稳定 ===');
     await new Promise(resolve => setTimeout(resolve, 1000));
 
+    // 等待获取真实clientId
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    const clientAId = clientA.getActualClientId();
+    const clientBId = clientB.getActualClientId();
+    
+    if (!clientAId || !clientBId) {
+      console.error('未能获取客户端ID，测试终止');
+      return;
+    }
+    
+    console.log(`\n=== 客户端ID映射 ===`);
+    console.log(`Client-A 显示名: ${clientA.clientId}, 实际ID: ${clientAId}`);
+    console.log(`Client-B 显示名: ${clientB.clientId}, 实际ID: ${clientBId}`);
+
     console.log('\n=== 测试步骤 2: Client-A 发送消息给 Client-B ===');
-    clientA.sendFriendMessage(clientB.clientId, '你好，我是Client-A！');
+    clientA.sendFriendMessage(clientBId, '你好，我是Client-A！');
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     console.log('\n=== 测试步骤 3: Client-B 回复消息给 Client-A ===');
-    clientB.sendFriendMessage(clientA.clientId, '你好Client-A，我是Client-B！很高兴认识你。');
+    clientB.sendFriendMessage(clientAId, '你好Client-A，我是Client-B！很高兴认识你。');
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     console.log('\n=== 测试步骤 4: Client-A 再次发送消息 ===');
-    clientA.sendFriendMessage(clientB.clientId, '测试消息 - 当前时间: ' + new Date().toLocaleString());
+    clientA.sendFriendMessage(clientBId, '测试消息 - 当前时间: ' + new Date().toLocaleString());
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -200,8 +226,8 @@ async function runFriendMessageTest() {
 }
 
 // 如果直接运行此文件，则执行测试
-if (require.main === module) {
+if (process.argv[1] && import.meta.url.startsWith(`file://${process.argv[1]}`)) {
   runFriendMessageTest().catch(console.error);
 }
 
-module.exports = { FriendMessageTestClient, runFriendMessageTest };
+export { FriendMessageTestClient, runFriendMessageTest };

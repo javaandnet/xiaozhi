@@ -16,7 +16,7 @@ router.get('/', (req, res) => {
       battery: device.battery,
       signal: device.signal,
       connectedAt: device.connectedAt,
-      lastSeen: device.lastSeen,
+      lastActivity: device.lastActivity,
       capabilities: device.capabilities
     }));
 
@@ -58,7 +58,7 @@ router.get('/:clientId', (req, res) => {
         battery: device.battery,
         signal: device.signal,
         connectedAt: device.connectedAt,
-        lastSeen: device.lastSeen,
+        lastActivity: device.lastActivity,
         capabilities: device.capabilities,
         sensorDataCount: device.sensorData ? device.sensorData.length : 0
       }
@@ -96,7 +96,7 @@ router.get('/by-device-id/:deviceId', (req, res) => {
         battery: device.battery,
         signal: device.signal,
         connectedAt: device.connectedAt,
-        lastSeen: device.lastSeen,
+        lastActivity: device.lastActivity,
         capabilities: device.capabilities
       }
     });
@@ -171,7 +171,7 @@ router.get('/stats/recent', (req, res) => {
         clientId: device.clientId,
         deviceId: device.deviceId,
         deviceType: device.type,
-        lastSeen: device.lastSeen,
+        lastActivity: device.lastActivity,
         status: device.status
       }))
     });

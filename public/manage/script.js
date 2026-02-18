@@ -22,7 +22,7 @@ class XiaoZhiClient {
             // RTN相关元素
             rtnClientSelect: document.getElementById('rtnClientSelect'),
             rtnDataInput: document.getElementById('rtnDataInput'),
-            sendRtnBtn: document.getElementById('sendRtnBtn'),
+
             // 好友消息相关元素
             friendClientSelect: document.getElementById('friendClientSelect'),
             friendDataInput: document.getElementById('friendDataInput'),
@@ -50,6 +50,36 @@ class XiaoZhiClient {
         setTimeout(() => this.autoConnect(), 500);
     }
 
+    // 测试服务器连接
+    async testConnection() {
+        this.addSystemMessage('🔍 正在测试服务器连接...');
+
+        try {
+            const testUrl = `${this.serverConfig.httpServerUrl}/xiaozhi/ota/`;
+            this.addSystemMessage(`测试地址: ${testUrl}`);
+
+            const response = await fetch(testUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            this.addSystemMessage(`✅ 服务器响应: ${response.status} ${response.statusText}`);
+
+            if (response.ok) {
+                const data = await response.json();
+                this.addSystemMessage(`✅ OTA接口返回数据:`, data);
+                if (data.websocket_url) {
+                    this.addSystemMessage(`✅ 成功获取WebSocket地址: ${data.websocket_url}`);
+                }
+            }
+        } catch (error) {
+            this.addSystemMessage(`❌ 测试失败: ${error.message}`);
+            console.error('测试连接错误:', error);
+        }
+    }
+
     // 自动连接
     async autoConnect() {
         this.addSystemMessage('🚀 正在自动连接服务器...');
@@ -68,6 +98,10 @@ class XiaoZhiClient {
 
         // 连接按钮
         this.elements.connectBtn.addEventListener('click', () => this.connect());
+
+        // 测试连接按钮
+        this.elements.testBtn = document.getElementById('testBtn');
+        this.elements.testBtn.addEventListener('click', () => this.testConnection());
 
         // 断开连接按钮
         this.elements.disconnectBtn.addEventListener('click', () => this.disconnect());
@@ -88,15 +122,9 @@ class XiaoZhiClient {
         // 清空聊天记录
         this.elements.clearBtn.addEventListener('click', () => this.clearChat());
 
-        // RTN消息发送
-        this.elements.sendRtnBtn.addEventListener('click', () => this.sendRtnMessage());
 
-        // RTN输入框回车发送
-        this.elements.rtnDataInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.sendRtnMessage();
-            }
-        });
+
+
 
         // 设备列表刷新
         this.elements.refreshDevicesBtn.addEventListener('click', () => this.refreshDevicesList());
@@ -125,14 +153,13 @@ class XiaoZhiClient {
 
         // 更新按钮状态
         this.elements.connectBtn.disabled = this.isConnected || this.isConnecting;
+        this.elements.testBtn.disabled = this.isConnecting;
         this.elements.disconnectBtn.disabled = !this.isConnected;
         this.elements.reconnectBtn.disabled = this.isConnecting;
         this.elements.sendBtn.disabled = !this.isConnected;
         this.elements.messageInput.disabled = !this.isConnected;
-        // RTN按钮状态
-        this.elements.sendRtnBtn.disabled = !this.isConnected;
-        this.elements.rtnClientSelect.disabled = !this.isConnected;
-        this.elements.rtnDataInput.disabled = !this.isConnected;
+
+
         // 好友消息按钮状态
         this.elements.sendFriendBtn.disabled = !this.isConnected;
         this.elements.friendClientSelect.disabled = !this.isConnected;
@@ -210,14 +237,26 @@ class XiaoZhiClient {
         this.updateUI();
         this.addSystemMessage('正在获取服务器配置...');
 
+        // 调试信息
+        console.log('当前服务器配置:', this.serverConfig);
+
         try {
             // 第一步：通过OTA接口获取WebSocket URL
             const otaUrl = `${this.serverConfig.httpServerUrl}/xiaozhi/ota/`;
             this.addSystemMessage(`正在访问: ${otaUrl}`);
 
-            const otaResponse = await fetch(otaUrl);
+            // console.log('发送OTA请求到:', otaUrl);
+
+            const otaResponse = await fetch(otaUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
             if (!otaResponse.ok) {
-                throw new Error(`OTA接口请求失败: ${otaResponse.status}`);
+                const errorText = await otaResponse.text();
+                throw new Error(`OTA接口请求失败 (${otaResponse.status}): ${errorText}`);
             }
 
             const otaData = await otaResponse.json();
@@ -240,7 +279,20 @@ class XiaoZhiClient {
 
         } catch (error) {
             this.addSystemMessage(`❌ 连接失败: ${error.message}`);
-            console.error('连接错误:', error);
+            console.error('连接错误详细信息:', {
+                message: error.message,
+                stack: error.stack,
+                serverUrl: this.serverConfig.httpServerUrl
+            });
+
+            // 提供具体的解决建议
+            if (error.message.includes('Failed to fetch')) {
+                this.addSystemMessage('💡 提示: 请检查网络连接或服务器地址是否正确');
+            } else if (error.message.includes('404')) {
+                this.addSystemMessage('💡 提示: OTA接口路径可能不正确，请确认服务器已启动');
+            } else if (error.message.includes('CORS')) {
+                this.addSystemMessage('💡 提示: 可能存在跨域问题，请检查服务器CORS配置');
+            }
         } finally {
             this.isConnecting = false;
             this.updateUI();
@@ -253,7 +305,19 @@ class XiaoZhiClient {
             this.ws.close();
         }
 
-        this.ws = new WebSocket(`ws://${window.location.host}/ws`);
+        // 构造带参数的WebSocket URL，表明连接类型为web
+        const wsUrl = new URL(`ws://${window.location.host}/ws`);
+        wsUrl.searchParams.append('client_type', 'web');
+        wsUrl.searchParams.append('timestamp', Date.now());
+
+        this.ws = new WebSocket(wsUrl.toString());
+
+        // 在控制台显示连接信息
+        console.log('WebSocket连接信息:', {
+            url: wsUrl.toString(),
+            clientType: 'web',
+            timestamp: new Date().toISOString()
+        });
 
         this.ws.onopen = () => {
             console.log('WebSocket连接已建立');
@@ -503,59 +567,6 @@ class XiaoZhiClient {
         }
     }
 
-    // 发送RTN消息
-    async sendRtnMessage() {
-        const client = this.elements.rtnClientSelect.value;
-        const data = this.elements.rtnDataInput.value.trim();
-
-        if (!client || !data) {
-            this.addSystemMessage('⚠️ 请选择目标设备并输入消息内容');
-            if (!client) this.elements.rtnClientSelect.focus();
-            else this.elements.rtnDataInput.focus();
-            return;
-        }
-
-        if (!this.isConnected) {
-            this.addSystemMessage('⚠️ 请先连接到服务器');
-            return;
-        }
-
-        // 显示RTN消息发送
-        this.addSystemMessage(`📤 发送RTN消息到 ${client}: ${data}`);
-
-        // 清空输入框
-        this.elements.rtnDataInput.value = '';
-        this.elements.rtnDataInput.focus();
-
-        try {
-            const rtnMessage = {
-                type: "rtn",
-                client: client,
-                data: data
-            };
-            const deviceUrl = `${this.serverConfig.httpServerUrl}/api/rtn`;
-            const response = await fetch(deviceUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(rtnMessage)
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.addSystemMessage(`✅ RTN消息发送成功: ${result.message}`);
-                this.addSystemMessage(`   目标设备: ${result.targetClient}`);
-                this.addSystemMessage(`   转发内容: ${result.forwarded}`);
-            } else {
-                this.addSystemMessage(`❌ RTN消息发送失败: ${result.message}`);
-            }
-        } catch (error) {
-            this.addSystemMessage(`❌ RTN消息发送失败: ${error.message}`);
-            console.error('发送RTN消息错误:', error);
-        }
-    }
 
     // 发送好友消息
     async sendFriendMessage() {
@@ -685,7 +696,7 @@ class XiaoZhiClient {
 
                 otherDevices.forEach((device, index) => {
                     const connectedTime = device.connected_at ? new Date(device.connected_at).toLocaleString('zh-CN') : 'N/A';
-                    const lastActivity = device.last_activity ? new Date(device.last_activity).toLocaleString('zh-CN') : 'N/A';
+                    const lastActivity = device.lastActivity ? new Date(device.lastActivity).toLocaleString('zh-CN') : 'N/A';
 
                     // 根据设备类型设置不同的颜色
                     const isEsp32 = device.client_ip !== '192.168.1.55'; // 非Node.js服务器IP的设备认为是ESP32
@@ -697,8 +708,7 @@ class XiaoZhiClient {
                         <div style="margin-bottom: 8px; padding: 8px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid ${borderColor};">
                             <div style="font-weight: bold; color: ${titleColor}; font-size: 13px;">📱 ${deviceType} ${index + 1}</div>
                             <div style="margin-top: 5px; font-family: monospace; font-size: 12px; color: #495057;">
-                                设备ID: ${device.deviceId}<br>
-                                会话ID: ${device.session_id}<br>
+                                设备ID: ${device.clientId}<br>
                                 客户端IP: ${device.ip}<br>
                                 连接时间: ${connectedTime}<br>
                                 最后活动: ${lastActivity}
@@ -723,53 +733,18 @@ class XiaoZhiClient {
                 `;
             }
 
-            // 更新RTN下拉框选项
-            this.updateRtnDeviceOptions(otherDevices);
+
             // 更新好友消息下拉框选项
             this.updateFriendClientOptions(otherDevices);
         } else {
             html = '<div style="text-align: center; color: #6c757d; padding: 20px;">暂无设备信息</div>';
-            // 清空RTN下拉框
-            this.updateRtnDeviceOptions([]);
+
         }
 
         this.elements.devicesList.innerHTML = html;
     }
 
-    // 更新RTN消息目标设备下拉框选项
-    updateRtnDeviceOptions(devices) {
-        const selectElement = this.elements.rtnClientSelect;
 
-        // 保存当前选中的值
-        const currentValue = selectElement.value;
-
-        // 清空现有选项（保留第一个提示选项）
-        selectElement.innerHTML = '<option value="">请选择目标设备</option>';
-
-        // 添加设备选项
-        if (devices && devices.length > 0) {
-            devices.forEach(device => {
-                const option = document.createElement('option');
-                option.value = device.device_id;
-
-                // 根据设备类型设置显示文本
-                const isEsp32 = device.client_ip !== '192.168.1.55';
-                const deviceType = isEsp32 ? '[ESP32]' : '[其他]';
-                option.textContent = `${deviceType} ${device.deviceId}`;
-
-                selectElement.appendChild(option);
-            });
-
-            // 如果之前选中的值还在选项中，恢复选择
-            if (currentValue && Array.from(selectElement.options).some(opt => opt.value === currentValue)) {
-                selectElement.value = currentValue;
-            }
-
-            this.addSystemMessage(`🔄 RTN目标设备列表已更新，共 ${devices.length} 个可选设备`);
-        } else {
-            this.addSystemMessage('⚠️ 暂无可选的目标设备');
-        }
-    }
 
     // 更新好友消息目标客户端下拉框选项
     updateFriendClientOptions(clients) {

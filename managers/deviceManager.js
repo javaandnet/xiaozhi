@@ -16,7 +16,7 @@ class DeviceManager {
       ip: deviceInfo.ip,
       connection: deviceInfo.connection,
       connectedAt: deviceInfo.connectedAt || new Date(),
-      lastSeen: new Date(),
+      lastActivity: new Date(),
       status: 'online',
       battery: null,
       signal: null,
@@ -64,7 +64,7 @@ class DeviceManager {
     const device = this.devices.get(clientId);
     if (device) {
       Object.assign(device, updates);
-      device.lastSeen = new Date();
+      device.lastActivity = new Date();
       this.devices.set(clientId, device);
       return device;
     }
@@ -181,7 +181,7 @@ class DeviceManager {
     const removedDevices = [];
 
     this.devices.forEach((device, clientId) => {
-      if (device.lastSeen < cutoffTime) {
+      if (device.lastActivity < cutoffTime) {
         removedDevices.push({
           clientId: device.id,
           deviceId: device.deviceId,
@@ -197,7 +197,7 @@ class DeviceManager {
   // 获取最近活动的设备
   getRecentActiveDevices(limit = 10) {
     return this.getAllDevices()
-      .sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen))
+      .sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity))
       .slice(0, limit);
   }
 
@@ -210,7 +210,7 @@ class DeviceManager {
         deviceType: device.deviceType,
         ip: device.ip,
         connectedAt: device.connectedAt,
-        lastSeen: device.lastSeen,
+        lastActivity: device.lastActivity,
         status: device.status,
         battery: device.battery,
         signal: device.signal,

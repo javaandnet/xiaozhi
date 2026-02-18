@@ -3,6 +3,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger.js';
 import DeviceManager from '../managers/device.js';
+import McpService from '../services/mcp.js';
 import audioConverter from '../utils/audioConverter.js';
 
 /**
@@ -22,6 +23,7 @@ class WebSocketHandler {
     this.sttService = options.sttService;
     this.llmService = options.llmService;
     this.vadService = options.vadService;
+    this.mcpService = options.mcpService || new McpService();
 
     // 注册到设备管理器
     if (this.deviceManager && !this.deviceManager.addDevice) {
@@ -48,7 +50,13 @@ class WebSocketHandler {
     const clientId = uuidv4();
     const clientIp = req.socket.remoteAddress;
 
-    logger.info(`新的WebSocket连接: ${clientId} 来自 ${clientIp}`);
+    // 解析URL参数
+    const urlParams = new URLSearchParams(req.url.split('?')[1] || '');
+    const clientType = urlParams.get('client_type') || 'hard';
+    const timestamp = urlParams.get('timestamp');
+
+    logger.info(`新的WebSocket连接: ${clientId} 来自 ${clientIp} client_type=${clientType}, timestamp=${timestamp}`);
+
 
     // 设置客户端信息
     ws.clientId = clientId;
@@ -68,12 +76,26 @@ class WebSocketHandler {
     // 注册到设备管理器
     const dm = this.getDeviceManager();
     if (dm && dm.addDevice) {
-      dm.addDevice({
+      const deviceInfo = {
         id: ws.clientId,
+        clientId: ws.clientId,
+        deviceId: `${clientId.substring(0, 8)}`, // 网页客户端默认设备ID
+        type: clientType, // 使用URL参数中的客户端类型
         ip: ws.clientIp,
-        connection: ws,
-        connectedAt: new Date()
-      });
+        connection: ws, // 保存WebSocket连接引用
+        connectedAt: new Date(),
+        lastActivity: new Date(),
+        status: 'online',
+        // 添加额外的连接信息
+        connectionInfo: {
+          clientType: clientType,
+          connectTime: timestamp ? new Date(parseInt(timestamp)) : new Date(),
+          userAgent: req.headers['user-agent'] || 'hard'
+        }
+      };
+
+      dm.addDevice(deviceInfo);
+      logger.info(`设备注册成功: ${deviceInfo.deviceId} (${deviceInfo.clientId}), 类型: ${clientType}, 状态: ${deviceInfo.status}, 连接: ${!!deviceInfo.connection}`);
     }
 
     // 处理消息
@@ -111,12 +133,46 @@ class WebSocketHandler {
     if (dm && dm.removeDevice) {
       dm.removeDevice(ws.clientId);
     }
+
+    // 处理MCP客户端断开
+    if (this.mcpService) {
+      this.mcpService.handleDeviceDisconnect(ws.clientId);
+    }
+
     if (ws.sessionId) {
       logger.info(`会话结束: ${ws.sessionId} (${ws.clientId})`);
     }
   }
 
-  // ==================== 消息处理 ====================
+  /**
+   * 处理MCP消息
+   */
+  async handleMcpMessage(ws, payload) {
+    if (this.mcpService) {
+      await this.mcpService.handleMcpMessage(ws, payload);
+    } else {
+      console.warn('MCP服务未初始化');
+    }
+  }
+
+  /**
+   * 发送MCP初始化消息到设备
+   */
+  sendMcpInitialize(ws) {
+    if (this.mcpService) {
+      this.mcpService.sendMcpInitializeMessage(ws);
+    }
+  }
+
+  /**
+   * 获取可用的MCP工具列表
+   */
+  getMcpTools() {
+    if (this.mcpService) {
+      return this.mcpService.getFunctionDescriptions();
+    }
+    return [];
+  }
 
   /**
    * 处理消息
@@ -149,6 +205,10 @@ class WebSocketHandler {
       case 'chat':
         await this.handleProtocolMessage(ws, type, payload);
         break;
+      case 'mcp':
+        console.log(`处理MCP消息 [${ws.clientId}]`);
+        await this.handleMcpMessage(ws, payload);
+        break;
       case 'start_recognition':
         console.log(`处理开始识别请求 [${ws.clientId}]`);
         this.sendMessage(ws, {
@@ -164,6 +224,10 @@ class WebSocketHandler {
       case 'wake_word_detected':
         console.log(`处理唤醒词检测通知 [${ws.clientId}]: ${payload.keyword}`);
         this.handleWakeWordDetected(ws, payload);
+        break;
+      case 'friend':
+        console.log(`处理好友消息 [${ws.clientId}]: 发送给 ${payload.clientid}`);
+        await this.handleFriendMessage(ws, payload);
         break;
       default:
         console.warn(`未知消息类型: ${type}`);
@@ -345,6 +409,14 @@ class WebSocketHandler {
           audio_params: ws.audioParams
         });
         console.log(`设备握手成功: ${ws.clientId}, Session: ${ws.sessionId}`);
+
+        // 如果设备支持MCP，发送MCP初始化消息
+        if (ws.features?.mcp) {
+          console.log(`设备 ${ws.clientId} 支持MCP，发送初始化消息`);
+          setTimeout(() => {
+            this.sendMcpInitialize(ws);
+          }, 1000); // 延迟1秒发送，确保握手完成
+        }
         break;
 
       case 'listen':
@@ -797,6 +869,86 @@ class WebSocketHandler {
     });
   }
 
+  /**
+   * 处理好友消息 - 客户端间消息传递
+   * @param {WebSocket} ws - 发送方WebSocket连接
+   * @param {Object} payload - 消息负载 {clientid, data}
+   */
+  async handleFriendMessage(ws, payload) {
+    const { clientid: targetClientId, data } = payload;
+
+    // 验证参数
+    if (!targetClientId) {
+      this.sendError(ws, '缺少目标客户端ID', ws.sessionId);
+      return;
+    }
+
+    if (data === undefined || data === null) {
+      this.sendError(ws, '消息内容不能为空', ws.sessionId);
+      return;
+    }
+
+    // 获取目标客户端
+    const dm = this.getDeviceManager();
+    if (!dm || !dm.getDevice) {
+      this.sendError(ws, '设备管理器未初始化', ws.sessionId);
+      return;
+    }
+
+    const targetDevice = dm.getDevice(targetClientId);
+
+    // 检查目标客户端是否存在且在线
+    if (!targetDevice) {
+      this.sendError(ws, `目标客户端不存在: ${targetClientId}`, ws.sessionId);
+      return;
+    }
+
+    // 检查目标客户端是否存在且在线
+    if (!targetDevice) {
+      this.sendError(ws, `目标客户端不存在: ${targetClientId}`, ws.sessionId);
+      return;
+    }
+
+    // 检查在线状态
+    const isOnline = targetDevice.connection &&
+      targetDevice.connection.readyState === 1 &&
+      targetDevice.status === 'online';
+
+    if (!isOnline) {
+      this.sendError(ws, `目标客户端不在线: ${targetClientId}`, ws.sessionId);
+      return;
+    }
+
+    // 构造转发消息
+    const forwardMessage = {
+      type: 'friend',
+      from: ws.clientId,  // 添加发送方ID
+      data: data,
+      timestamp: new Date().toISOString()
+    };
+    //TTS
+    //TODO: 添加TTS功能
+    // 发送给目标客户端
+    try {
+      this.sendToClient(targetDevice.connection, forwardMessage);
+
+      // 向发送方确认消息已发送
+      this.sendToClient(ws, {
+        type: 'friend_ack',
+        to: targetClientId,
+        data: data,
+        timestamp: new Date().toISOString(),
+        status: 'sent'
+      });
+
+      console.log(`✅ 好友消息转发成功: ${ws.clientId} -> ${targetClientId}`);
+
+    } catch (error) {
+      console.error(`❌ 好友消息转发失败:`, error);
+      this.sendError(ws, `消息发送失败: ${error.message}`, ws.sessionId);
+    }
+  }
+
   async handleWakeWordResponse(ws, wakeWordResult, sessionId) {
     // 处理唤醒词检测后的响应
     console.log(`处理唤醒词响应: ${wakeWordResult.keyword}`);
@@ -1091,7 +1243,7 @@ class WebSocketHandler {
       // 保存原始 Opus 数据
       const opusFile = path.join(debugDir, `audio-${timestamp}.opus`);
       fs.writeFileSync(opusFile, combinedOpus);
-      logger.info(`💾 已保存 Opus 音频: ${opusFile} (${combinedOpus.length} bytes)`);
+      // logger.info(`💾 已保存 Opus 音频: ${opusFile} (${combinedOpus.length} bytes)`);
 
       // ========== 自动检测音频格式 ==========
       // PCM @ 16kHz, 16bit, mono, 60ms = 1920 bytes (960 samples * 2 bytes)
