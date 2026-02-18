@@ -405,7 +405,20 @@ class McpService extends BaseService {
           }
         }
       }
+    } else if (msgId === 3) { // 工具列表响应
+      // console.log('✅ 收到MCP工具列表响应');
+      if (result && typeof result === 'object' && Array.isArray(result.content)) {
+        const contentsData = result.content;
+        // console.log(`📊 客户端设备支持的工具数量: ${toolsData.length}`);
 
+        for (let i = 0; i < contentsData.length; i++) {
+          const content = contentsData[i];
+          if (typeof content === 'object') {
+            console.log(`🔧 客户端工具 #${i + 1}: ${JSO.stringify(content)}`);
+          }
+        }
+
+      }
     } else if ('method' in payload) {
       const method = payload.method;
       console.log(`📥 收到MCP客户端请求: ${method}`);

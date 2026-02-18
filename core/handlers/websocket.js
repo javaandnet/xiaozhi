@@ -54,7 +54,8 @@ class WebSocketHandler {
    * 处理新连接 - 设置客户端信息和事件监听
    */
   handleConnection(ws, req) {
-    const clientId = uuidv4();
+    const clientId = req.headers['client-id'] || uuidv4();
+    const deviceId = req.headers['device-id'] || uuidv4();
     const clientIp = req.socket.remoteAddress;
 
     // 解析URL参数
@@ -72,13 +73,14 @@ class WebSocketHandler {
     ws.isAlive = true;
     ws.isAuthenticated = false;
     ws.sessionId = null;
-
-    // 发送连接确认
-    this.sendToClient(ws, {
-      type: SERVER_MESSAGE_TYPES.CONNECTION_ACK,
-      clientId: clientId,
-      timestamp: new Date().toISOString()
-    });
+    if (clientType !== "hard") {
+      // 发送连接确认
+      this.sendToClient(ws, {
+        type: SERVER_MESSAGE_TYPES.CONNECTION_ACK,
+        clientId: clientId,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // 注册到设备管理器
     const dm = this.getDeviceManager();
@@ -86,7 +88,7 @@ class WebSocketHandler {
       const deviceInfo = {
         id: ws.clientId,
         clientId: ws.clientId,
-        deviceId: `${clientId.substring(0, 8)}`, // 网页客户端默认设备ID
+        deviceId: deviceId, // 网页客户端默认设备ID
         type: clientType, // 使用URL参数中的客户端类型
         ip: ws.clientIp,
         connection: ws, // 保存WebSocket连接引用
@@ -415,11 +417,11 @@ class WebSocketHandler {
           session_id: ws.sessionId,
           audio_params: ws.audioParams
         });
-        console.log(`设备握手成功: ${ws.clientId}, Session: ${ws.sessionId}`);
+        // console.log(`设备握手成功: ${ws.clientId}, Session: ${ws.sessionId}`);
 
         // 如果设备支持MCP，发送MCP初始化消息
         if (ws.features?.mcp) {
-          console.log(`设备 ${ws.clientId} 支持MCP，发送初始化消息`);
+          // console.log(`设备 ${ws.clientId} 支持MCP，发送初始化消息`);
           setTimeout(() => {
             this.sendMcpInitialize(ws);
           }, 100); // 延迟1秒发送，确保握手完成
@@ -504,10 +506,10 @@ class WebSocketHandler {
         if (ws.sessionId) {
           this.sessionManager.closeSession(ws.sessionId);
           if (this.ttsService) {
-            this.ttsService.clearHistory(ws.sessionId);
+            // this.ttsService.clearHistory(ws.sessionId);
           }
           if (this.sttService) {
-            this.sttService.clearHistory(ws.sessionId);
+            // this.sttService.clearHistory(ws.sessionId);
           }
         }
         break;
@@ -1028,27 +1030,25 @@ class WebSocketHandler {
 
         let payload2 = {
           "jsonrpc": "2.0",
+          "id": 2,
+          "method": "tools/list",
+        };
+
+        const exeCmd =
+        {
+          "jsonrpc": "2.0",
+          "id": 3,
           "method": "tools/call",
           "params": {
-            "name": "self.light.set_rgb",
-            "arguments": { "r": 255, "g": 0, "b": 0 }
+            "name": "self.get_device_status", // 要调用的工具名称
+            "arguments": {
+            }
           }
-        };
-        const mcpCmd =
-        {
-          "session_id": sessionId,
-          "type": "mcp",
-          "payload": payload1,
-          "id": 2
         }
         this.sendMessage(targetDevice.connection, {
           type: SERVER_MESSAGE_TYPES.MCP,
-          payload: payload1
+          payload: exeCmd
         });
-      }
-      else {
-        // 默认处理 - 直接转发好友消息
-        await this.handleDefaultFriendMessage(ws, targetDevice, messageData, targetClientId);
       }
     } catch (error) {
       console.error(`❌ 好友消息处理失败:`, error);
@@ -1180,8 +1180,6 @@ class WebSocketHandler {
       timestamp: new Date().toISOString()
     };
 
-
-
     // 如果是hard设备，也发送语音
     if (targetDevice.type === 'hard' && this.ttsService) {
       try {
@@ -1212,281 +1210,8 @@ class WebSocketHandler {
     console.log(`✅ SST好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
   }
 
-  /**
-   * 处理LLM类型好友消息 - 经过大模型处理后以语音模式发送
-   */
-  async handleLLMFriendMessage(ws, targetDevice, messageData, targetClientId) {
-    console.log(`🤖 处理LLM好友消息: ${messageData.content || messageData.prompt}`);
 
-    try {
-      // 使用LLM服务处理消息
-      if (this.llmService) {
-        const prompt = messageData.content || messageData.prompt;
-        const llmResponse = await this.llmService.generateResponse(prompt);
 
-        // 构造LLM回复消息
-        const llmMessage = {
-          type: 'llm',
-          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-          text: llmResponse.text,
-          timestamp: new Date().toISOString()
-        };
-
-        // 发送LLM回复
-        this.sendToClient(targetDevice.connection, llmMessage);
-
-        // 转换为语音发送
-        if (this.ttsService) {
-          const ttsMessage = {
-            type: 'tts',
-            session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-            text: llmResponse.text,
-            timestamp: new Date().toISOString()
-          };
-          this.sendToClient(targetDevice.connection, ttsMessage);
-        }
-
-        console.log(`✅ LLM处理完成并发送语音: ${llmResponse.text}`);
-      } else {
-        // 如果没有LLM服务，直接转发原文本
-        const fallbackMessage = {
-          type: 'stt',
-          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-          text: messageData.content || messageData.prompt,
-          timestamp: new Date().toISOString()
-        };
-        this.sendToClient(targetDevice.connection, fallbackMessage);
-        console.log(`⚠️ LLM服务不可用，发送原文本`);
-      }
-    } catch (error) {
-      console.error(`LLM处理失败:`, error);
-      // 出错时发送错误信息
-      const errorMessage = {
-        type: 'error',
-        message: 'LLM处理失败: ' + error.message,
-        timestamp: new Date().toISOString()
-      };
-      this.sendToClient(targetDevice.connection, errorMessage);
-    }
-
-    // 向发送方确认
-    this.sendToClient(ws, {
-      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
-      to: targetClientId,
-      data: messageData,
-      timestamp: new Date().toISOString(),
-      status: 'sent'
-    });
-
-    console.log(`✅ LLM好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
-  }
-
-  /**
-   * 处理MCP类型好友消息 - 调用对应客户端的MCP能力
-   */
-  async handleMCPFriendMessage(ws, targetDevice, messageData, targetClientId) {
-    console.log(`🔧 处理MCP好友消息: ${messageData.content || messageData.action}`);
-
-    try {
-      // 构造MCP消息
-      const mcpMessage = {
-        type: 'mcp',
-        session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-        action: messageData.content || messageData.action,
-        timestamp: new Date().toISOString()
-      };
-
-      // 发送给目标客户端
-      this.sendToClient(targetDevice.connection, mcpMessage);
-
-      console.log(`✅ MCP消息已发送到客户端`);
-    } catch (error) {
-      console.error(`MCP消息发送失败:`, error);
-      // 发送错误信息
-      const errorMessage = {
-        type: 'error',
-        message: 'MCP消息发送失败: ' + error.message,
-        timestamp: new Date().toISOString()
-      };
-      this.sendToClient(targetDevice.connection, errorMessage);
-    }
-
-    // 向发送方确认
-    this.sendToClient(ws, {
-      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
-      to: targetClientId,
-      data: messageData,
-      timestamp: new Date().toISOString(),
-      status: 'sent'
-    });
-
-    console.log(`✅ MCP好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
-  }
-
-  /**
-   * 处理默认好友消息 - 直接转发
-   */
-  async handleDefaultFriendMessage(ws, targetDevice, messageData, targetClientId) {
-    // 构造转发消息
-    const forwardMessage = {
-      type: SERVER_MESSAGE_TYPES.FRIEND,
-      from: ws.clientId,
-      data: messageData,
-      timestamp: new Date().toISOString()
-    };
-
-    // 发送给目标客户端
-    this.sendToClient(targetDevice.connection, forwardMessage);
-
-    // 向发送方确认消息已发送
-    this.sendToClient(ws, {
-      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
-      to: targetClientId,
-      data: messageData,
-      timestamp: new Date().toISOString(),
-      status: 'sent'
-    });
-
-    console.log(`✅ 默认好友消息转发成功: ${ws.clientId} -> ${targetClientId}`);
-  }
-
-  /**
-   * 处理LLM类型好友消息 - 经过大模型处理后以语音模式发送
-   */
-  async handleLLMFriendMessage(ws, targetDevice, messageData, targetClientId) {
-    console.log(`🤖 处理LLM好友消息: ${messageData.content || messageData.prompt}`);
-
-    try {
-      // 使用LLM服务处理消息
-      if (this.llmService) {
-        const prompt = messageData.content || messageData.prompt;
-        const llmResponse = await this.llmService.generateResponse(prompt);
-
-        // 构造LLM回复消息
-        const llmMessage = {
-          type: 'llm',
-          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-          text: llmResponse.text,
-          timestamp: new Date().toISOString()
-        };
-
-        // 发送LLM回复
-        this.sendToClient(targetDevice.connection, llmMessage);
-
-        // 转换为语音发送
-        if (this.ttsService) {
-          const ttsMessage = {
-            type: 'tts',
-            session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-            text: llmResponse.text,
-            timestamp: new Date().toISOString()
-          };
-          this.sendToClient(targetDevice.connection, ttsMessage);
-        }
-
-        console.log(`✅ LLM处理完成并发送语音: ${llmResponse.text}`);
-      } else {
-        // 如果没有LLM服务，直接转发原文本
-        const fallbackMessage = {
-          type: 'stt',
-          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-          text: messageData.content || messageData.prompt,
-          timestamp: new Date().toISOString()
-        };
-        this.sendToClient(targetDevice.connection, fallbackMessage);
-        console.log(`⚠️ LLM服务不可用，发送原文本`);
-      }
-    } catch (error) {
-      console.error(`LLM处理失败:`, error);
-      // 出错时发送错误信息
-      const errorMessage = {
-        type: 'error',
-        message: 'LLM处理失败: ' + error.message,
-        timestamp: new Date().toISOString()
-      };
-      this.sendToClient(targetDevice.connection, errorMessage);
-    }
-
-    // 向发送方确认
-    this.sendToClient(ws, {
-      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
-      to: targetClientId,
-      data: messageData,
-      timestamp: new Date().toISOString(),
-      status: 'sent'
-    });
-
-    console.log(`✅ LLM好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
-  }
-
-  /**
-   * 处理MCP类型好友消息 - 调用对应客户端的MCP能力
-   */
-  async handleMCPFriendMessage(ws, targetDevice, messageData, targetClientId) {
-    console.log(`🔧 处理MCP好友消息: ${messageData.content || messageData.action}`);
-
-    try {
-      // 构造MCP消息
-      const mcpMessage = {
-        type: 'mcp',
-        session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
-        action: messageData.content || messageData.action,
-        timestamp: new Date().toISOString()
-      };
-
-      // 发送给目标客户端
-      this.sendToClient(targetDevice.connection, mcpMessage);
-
-      console.log(`✅ MCP消息已发送到客户端`);
-    } catch (error) {
-      console.error(`MCP消息发送失败:`, error);
-      // 发送错误信息
-      const errorMessage = {
-        type: 'error',
-        message: 'MCP消息发送失败: ' + error.message,
-        timestamp: new Date().toISOString()
-      };
-      this.sendToClient(targetDevice.connection, errorMessage);
-    }
-
-    // 向发送方确认
-    this.sendToClient(ws, {
-      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
-      to: targetClientId,
-      data: messageData,
-      timestamp: new Date().toISOString(),
-      status: 'sent'
-    });
-
-    console.log(`✅ MCP好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
-  }
-
-  /**
-   * 处理默认好友消息 - 直接转发
-   */
-  async handleDefaultFriendMessage(ws, targetDevice, messageData, targetClientId) {
-    // 构造转发消息
-    const forwardMessage = {
-      type: SERVER_MESSAGE_TYPES.FRIEND,
-      from: ws.clientId,
-      data: messageData,
-      timestamp: new Date().toISOString()
-    };
-
-    // 发送给目标客户端
-    this.sendToClient(targetDevice.connection, forwardMessage);
-
-    // 向发送方确认消息已发送
-    this.sendToClient(ws, {
-      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
-      to: targetClientId,
-      data: messageData,
-      timestamp: new Date().toISOString(),
-      status: 'sent'
-    });
-
-    console.log(`✅ 默认好友消息转发成功: ${ws.clientId} -> ${targetClientId}`);
-  }
 
   // 广播消息给所有连接的客户端
   broadcast(message, excludeClientId = null) {
