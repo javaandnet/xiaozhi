@@ -3,6 +3,7 @@ class XiaoZhiClient {
         this.ws = null;
         this.isConnected = false;
         this.isConnecting = false;
+        this.clientId = null; // 存储当前客户端ID
 
         // DOM元素
         this.elements = {
@@ -18,13 +19,14 @@ class XiaoZhiClient {
             // 服务器配置元素
             serverUrlInput: document.getElementById('serverUrlInput'),
             saveServerBtn: document.getElementById('saveServerBtn'),
-            wsUrlDisplay: document.getElementById('wsUrlDisplay'),
+            clientIdDisplay: document.getElementById('clientIdDisplay'),
             // RTN相关元素
             rtnClientSelect: document.getElementById('rtnClientSelect'),
             rtnDataInput: document.getElementById('rtnDataInput'),
 
             // 好友消息相关元素
             friendClientSelect: document.getElementById('friendClientSelect'),
+            friendMessageType: document.getElementById('friendMessageType'),
             friendDataInput: document.getElementById('friendDataInput'),
             sendFriendBtn: document.getElementById('sendFriendBtn'),
             friendMessages: document.getElementById('friendMessages'),
@@ -41,7 +43,7 @@ class XiaoZhiClient {
         };
 
         // 初始化服务器地址显示
-        this.updateServerUrlDisplay();
+        this.updateClientInfoDisplay();
 
         this.setupEventListeners();
         this.updateUI();
@@ -201,7 +203,7 @@ class XiaoZhiClient {
         this.serverConfig.websocketUrl = null;
 
         // 更新显示
-        this.updateServerUrlDisplay();
+        this.updateClientInfoDisplay();
 
         // 如果当前已连接，提示需要重新连接
         if (this.isConnected) {
@@ -213,19 +215,22 @@ class XiaoZhiClient {
         console.log('服务器地址已更新:', newUrl);
     }
 
-    // 更新服务器地址显示
-    updateServerUrlDisplay() {
+    // 更新客户端信息显示
+    updateClientInfoDisplay() {
         if (this.elements.serverUrlInput) {
             this.elements.serverUrlInput.value = this.serverConfig.httpServerUrl;
         }
-        // 显示获取到的WebSocket URL（如果有）
-        if (this.elements.wsUrlDisplay) {
-            if (this.serverConfig.websocketUrl) {
-                this.elements.wsUrlDisplay.textContent = `WebSocket: ${this.serverConfig.websocketUrl}`;
-                this.elements.wsUrlDisplay.style.color = '#28a745';
-            } else {
-                this.elements.wsUrlDisplay.textContent = '';
+        // 显示客户端ID和WebSocket URL
+        if (this.elements.clientIdDisplay) {
+            let displayText = '';
+            if (this.clientId) {
+                displayText = `ClientID: ${this.clientId}`;
             }
+            if (this.serverConfig.websocketUrl) {
+                displayText += displayText ? ` | WebSocket: ${this.serverConfig.websocketUrl}` : `WebSocket: ${this.serverConfig.websocketUrl}`;
+            }
+            this.elements.clientIdDisplay.textContent = displayText;
+            this.elements.clientIdDisplay.style.color = this.clientId ? '#28a745' : '#6c757d';
         }
     }
 
@@ -266,7 +271,7 @@ class XiaoZhiClient {
             }
 
             this.serverConfig.websocketUrl = otaData.websocket_url;
-            this.updateServerUrlDisplay();
+            this.updateClientInfoDisplay();
             this.addSystemMessage(`✅ 获取到WebSocket地址: ${otaData.websocket_url}`);
 
             // 连接成功
@@ -327,7 +332,7 @@ class XiaoZhiClient {
             try {
                 const message = JSON.parse(event.data);
                 console.log('收到WebSocket消息:', message);
-                this.handleWebSocketMessage(message);
+                this.handleServerMessage(message);
             } catch (error) {
                 console.error('解析WebSocket消息失败:', error);
             }
@@ -342,24 +347,6 @@ class XiaoZhiClient {
         };
     }
 
-    // 处理WebSocket消息
-    handleWebSocketMessage(message) {
-        switch (message.type) {
-            case 'status':
-                this.updateConnectionStatus(message.data);
-                break;
-            case 'message':
-                this.handleServerMessage(message.data);
-                break;
-            case 'friend':
-                this.handleFriendMessage(message);
-                break;
-            case 'friend_ack':
-                this.handleFriendAck(message);
-                break;
-        }
-    }
-
     // 更新连接状态
     updateConnectionStatus(status) {
         this.isConnected = status.connected;
@@ -372,7 +359,21 @@ class XiaoZhiClient {
     handleServerMessage(message) {
         console.log('收到服务器消息:', message);
 
+        // 如果消息包含from字段，说明是好友消息
+        if (message.from) {
+            this.handleFriendMessage(message);
+            return;
+        }
+
         switch (message.type) {
+            case 'connection_ack':
+                // 连接确认，获取clientId
+                if (message.clientId) {
+                    this.clientId = message.clientId;
+                    this.updateClientInfoDisplay();
+                    this.addSystemMessage(`✅ 已获取客户端ID: ${this.clientId}`);
+                }
+                break;
             case 'hello':
                 if (message.session_id) {
                     this.elements.sessionId.textContent = message.session_id;
@@ -381,7 +382,7 @@ class XiaoZhiClient {
                 break;
 
             case 'stt':
-                this.addBotMessage(`🎤 语音识别: ${message.text}`);
+                this.addBotMessage(`${message.text}`);
                 break;
 
             case 'llm':
@@ -401,7 +402,7 @@ class XiaoZhiClient {
 
     // 处理好友消息
     handleFriendMessage(message) {
-        console.log('收到好友消息:', message);
+        // console.log('收到好友消息:', message);
 
         const fromClientId = message.from || '未知客户端';
         const data = message.data || '';
@@ -478,21 +479,11 @@ class XiaoZhiClient {
 
     // 更新设备信息
     async updateDeviceInfo() {
-        try {
-            const response = await fetch(`${this.serverConfig.httpServerUrl}/api/status`);
-            const result = await response.json();
-
-            if (result.success) {
-                // 连接成功后自动刷新设备列表
-                if (this.isConnected) {
-                    setTimeout(() => {
-                        this.refreshDevicesList();
-                        this.addSystemMessage('🔄 已自动刷新设备列表');
-                    }, 1000); // 延迟1秒确保连接完全建立
-                }
-            }
-        } catch (error) {
-            console.error('获取设备信息失败:', error);
+        if (this.isConnected) {
+            setTimeout(() => {
+                this.refreshDevicesList();
+                this.addSystemMessage('🔄 已自动刷新设备列表');
+            }, 1000); // 延迟1秒确保连接完全建立
         }
     }
 
@@ -571,6 +562,7 @@ class XiaoZhiClient {
     // 发送好友消息
     async sendFriendMessage() {
         const client = this.elements.friendClientSelect.value;
+        const messageType = this.elements.friendMessageType.value;
         const data = this.elements.friendDataInput.value.trim();
 
         if (!client || !data) {
@@ -585,53 +577,67 @@ class XiaoZhiClient {
             return;
         }
 
-        // 显示好友消息发送
-        this.addSystemMessage(`💌 发送好友消息到 ${client}: ${data}`);
+        // 根据消息类型构建不同的消息格式
+        let messageToSend;
+        let displayMessage;
+
+        // 构建好友消息格式，data字段包含具体的消息类型信息
+        const structuredData = {
+            type: messageType,
+            content: data,
+            timestamp: new Date().toISOString()
+        };
+
+        // 根据不同消息类型添加额外字段
+        switch (messageType) {
+            case 'tts':
+                structuredData.data = data;
+                displayMessage = `语音消息`;
+                break;
+
+            case 'sst':
+                structuredData.data = data;
+                displayMessage = `文本消息`;
+                break;
+
+            case 'llm':
+                structuredData.data = data;
+                displayMessage = `AI对话消息`;
+                break;
+
+            case 'mcp':
+                structuredData.data = data;
+                displayMessage = `控制命令`;
+                break;
+
+            default:
+                displayMessage = `好友消息`;
+        }
+
+        // 统一使用friend消息类型发送
+        messageToSend = {
+            type: "friend",
+            clientid: client,
+            data: structuredData
+        };
+
+        // 显示消息发送
+        this.addSystemMessage(`💌 发送${displayMessage}到 ${client}: ${data}`);
 
         // 清空输入框
         this.elements.friendDataInput.value = '';
         this.elements.friendDataInput.focus();
 
         try {
-            // 通过WebSocket发送好友消息
+            // 通过WebSocket发送消息
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                const friendMessage = {
-                    type: "friend",
-                    clientid: client,
-                    data: data
-                };
-
-                this.ws.send(JSON.stringify(friendMessage));
-                this.addSystemMessage(`📤 好友消息已通过WebSocket发送`);
-            } else {
-                // 如果WebSocket不可用，尝试通过HTTP API发送
-                this.addSystemMessage('⚠️ WebSocket连接不可用，尝试通过HTTP发送...');
-
-                const friendMessage = {
-                    type: "friend",
-                    clientid: client,
-                    data: data
-                };
-
-                const response = await fetch(`${this.serverConfig.httpServerUrl}/api/friend`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(friendMessage)
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    this.addSystemMessage(`✅ 好友消息发送成功: ${result.message}`);
-                } else {
-                    this.addSystemMessage(`❌ 好友消息发送失败: ${result.message}`);
-                }
+                this.ws.send(JSON.stringify(messageToSend));
+                this.addSystemMessage(`📤 ${displayMessage}已通过WebSocket发送`);
             }
+            console.error('发送消息错误:', "NO SOCKET");
         } catch (error) {
-            this.addSystemMessage(`❌ 好友消息发送失败: ${error.message}`);
-            console.error('发送好友消息错误:', error);
+            this.addSystemMessage(`❌ ${displayMessage}发送失败: ${error.message}`);
+            console.error('发送消息错误:', error);
         }
     }
 
@@ -756,9 +762,15 @@ class XiaoZhiClient {
         // 清空现有选项（保留第一个提示选项）
         selectElement.innerHTML = '<option value="">请选择目标客户端</option>';
 
+        // 过滤掉本机clientId
+        const filteredClients = clients.filter(client => {
+            const clientId = client.clientId || client.deviceId;
+            return clientId !== this.clientId;
+        });
+
         // 添加客户端选项
-        if (clients && clients.length > 0) {
-            clients.forEach(client => {
+        if (filteredClients && filteredClients.length > 0) {
+            filteredClients.forEach(client => {
                 const option = document.createElement('option');
                 option.value = client.clientId || client.deviceId;
 
@@ -776,7 +788,7 @@ class XiaoZhiClient {
                 selectElement.value = currentValue;
             }
 
-            this.addSystemMessage(`🔄 好友消息目标客户端列表已更新，共 ${clients.length} 个可选客户端`);
+            this.addSystemMessage(`🔄 好友消息目标客户端列表已更新，共 ${filteredClients.length} 个可选客户端`);
         } else {
             this.addSystemMessage('⚠️ 暂无可选的目标客户端');
         }

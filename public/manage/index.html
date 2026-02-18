@@ -355,7 +355,7 @@
                 <button class="btn btn-secondary" id="saveServerBtn">
                     💾 保存
                 </button>
-                <span id="wsUrlDisplay" style="margin-left: 10px; font-size: 12px; color: #6c757d;"></span>
+                <span id="clientIdDisplay" style="margin-left: 10px; font-size: 12px; color: #6c757d;"></span>
             </div>
             <div class="connection-buttons">
                 <button class="btn btn-success" id="connectBtn">
@@ -396,6 +396,13 @@
                 <select id="friendClientSelect"
                     style="flex: 1; min-width: 150px; padding: 8px 12px; border: 1px solid #28a745; border-radius: 20px; font-size: 14px; background: white;">
                     <option value="">请选择目标客户端</option>
+                </select>
+                <select id="friendMessageType"
+                    style="flex: 1; min-width: 120px; padding: 8px 12px; border: 1px solid #28a745; border-radius: 20px; font-size: 14px; background: white;">
+                    <option value="tts">语音消息</option>
+                    <option value="sst">文本消息</option>
+                    <option value="llm">AI消息</option>
+                    <option value="mcp">控制命令</option>
                 </select>
                 <input type="text" id="friendDataInput" placeholder="好友消息内容"
                     style="flex: 2; min-width: 200px; padding: 8px 12px; border: 1px solid #28a745; border-radius: 20px; font-size: 14px;">
