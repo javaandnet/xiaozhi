@@ -15,9 +15,9 @@ import { logger } from './utils/logger.js';
 
 // 导入服务
 import LLMService from './core/services/llm.js';
+import McpService from './core/services/mcp.js';
 import SttService from './core/services/stt.js';
 import TTSService from './core/services/tts.js';
-import McpService from './core/services/mcp.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -61,6 +61,12 @@ const config = {
         cluster: process.env.DOUBAO_ASR_CLUSTER,
         access_token: process.env.DOUBAO_ASR_ACCESS_TOKEN
       }
+    },
+    // MCP配置
+    mcp: {
+      endpoint: process.env.MCP_ENDPOINT || null,
+      contextProviders: process.env.MCP_CONTEXT_PROVIDERS ?
+        JSON.parse(process.env.MCP_CONTEXT_PROVIDERS) : null
     }
   }
 };
@@ -73,6 +79,12 @@ const mcpService = new McpService(config);
 const sessionManager = new SessionManager();
 const deviceManager = new DeviceManager();
 
+// 初始化MCP配置
+let mcpConfig = {
+  mcp_endpoint: config.services.mcp.endpoint,
+  context_providers: config.services.mcp.contextProviders
+};
+
 // 初始化 WebSocketHandler（必须在路由加载之前）
 initializeWebSocketHandler({
   deviceManager,
@@ -80,7 +92,8 @@ initializeWebSocketHandler({
   llmService,
   ttsService,
   sttService,
-  mcpService
+  mcpService,
+  mcpConfig  // 传递MCP配置
 });
 
 // 初始化服务

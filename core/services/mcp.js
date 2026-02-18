@@ -1,5 +1,4 @@
 import BaseService from './base.js';
-import { v4 as uuidv4 } from 'uuid';
 
 /**
  * MCP工具定义
@@ -154,11 +153,11 @@ class McpService extends BaseService {
     this.executors = new Map();
     this.toolCache = null;
     this.functionDescriptionsCache = null;
-    
+
     // 注册执行器
     this.registerExecutor(ToolType.DEVICE_MCP, new DeviceMCPExecutor(this));
     this.registerExecutor(ToolType.MCP_ENDPOINT, new MCPEndpointExecutor(this));
-    
+
     console.log('✅ MCP服务构造完成');
   }
 
@@ -324,21 +323,20 @@ class McpService extends BaseService {
   /**
    * 处理MCP消息
    */
-  async handleMcpMessage(connection, payload) {
-    console.log('📥 处理MCP消息:', payload);
-
+  async handleMcpMessage(connection, rtn) {
+    let payload = rtn.payload;
     if (!payload || typeof payload !== 'object') {
       console.error('❌ MCP消息格式错误');
       return;
     }
 
     const clientId = connection.clientId;
-    
+
     // 确保设备有MCP客户端
     if (!this.deviceClients.has(clientId)) {
       this.deviceClients.set(clientId, new DeviceMCPClient());
     }
-    
+
     const mcpClient = this.deviceClients.get(clientId);
 
     // 处理结果
@@ -366,10 +364,10 @@ class McpService extends BaseService {
         }, 1000);
 
       } else if (msgId === 2) { // 工具列表响应
-        console.log('✅ 收到MCP工具列表响应');
+        // console.log('✅ 收到MCP工具列表响应');
         if (result && typeof result === 'object' && Array.isArray(result.tools)) {
           const toolsData = result.tools;
-          console.log(`📊 客户端设备支持的工具数量: ${toolsData.length}`);
+          // console.log(`📊 客户端设备支持的工具数量: ${toolsData.length}`);
 
           for (let i = 0; i < toolsData.length; i++) {
             const tool = toolsData[i];
@@ -400,7 +398,7 @@ class McpService extends BaseService {
           } else {
             mcpClient.setReady(true);
             console.log('✅ 所有工具已获取，MCP客户端准备就绪');
-            
+
             // 刷新工具缓存
             this.refreshTools();
             console.log('📋 当前支持的工具:', this.getSupportedToolNames());
@@ -478,7 +476,8 @@ class McpService extends BaseService {
     const payload = {
       jsonrpc: '2.0',
       id: 2,
-      method: 'tools/list'
+      method: 'tools/list',
+      params: { cursor: "" }  // ✅ 添加必需的params字段
     };
 
     console.log('📤 发送MCP工具列表请求');
@@ -520,7 +519,7 @@ class McpService extends BaseService {
     }
 
     const toolCallId = mcpClient.getNextId();
-    
+
     // 创建Promise用于等待响应
     const promise = new Promise((resolve, reject) => {
       mcpClient.registerCallResultFuture(toolCallId, { resolve, reject });
@@ -554,7 +553,7 @@ class McpService extends BaseService {
       // 等待响应或超时
       const rawResult = await Promise.race([
         promise,
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('工具调用请求超时')), timeout * 1000)
         )
       ]);
@@ -609,7 +608,7 @@ class DeviceMCPExecutor extends ToolExecutor {
     try {
       // 调用设备端MCP工具
       const result = await this.mcpService.callDeviceMcpTool(connection, toolName, args);
-      
+
       // 尝试解析JSON结果
       let resultJson = null;
       if (typeof result === 'string') {
@@ -640,7 +639,7 @@ class DeviceMCPExecutor extends ToolExecutor {
 
   getTools() {
     const tools = {};
-    
+
     // 收集所有设备的MCP工具
     for (const [clientId, mcpClient] of this.mcpService.deviceClients) {
       if (mcpClient.isReady()) {
@@ -648,7 +647,7 @@ class DeviceMCPExecutor extends ToolExecutor {
         for (const tool of mcpTools) {
           const funcDef = tool.function;
           const toolName = funcDef.name;
-          
+
           if (toolName) {
             tools[toolName] = new ToolDefinition(
               toolName,
@@ -659,7 +658,7 @@ class DeviceMCPExecutor extends ToolExecutor {
         }
       }
     }
-    
+
     return tools;
   }
 
@@ -703,12 +702,11 @@ class MCPEndpointExecutor extends ToolExecutor {
 
 export default McpService;
 export {
-  ToolDefinition,
-  ToolExecutor,
-  ToolType,
   Action,
   ActionResponse,
   DeviceMCPClient,
   DeviceMCPExecutor,
-  MCPEndpointExecutor
+  MCPEndpointExecutor, ToolDefinition,
+  ToolExecutor,
+  ToolType
 };

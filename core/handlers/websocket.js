@@ -2,6 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger.js';
+import {
+  CHAT_STATES,
+  CLIENT_MESSAGE_TYPES,
+  LISTEN_STATES,
+  SERVER_MESSAGE_TYPES,
+  TTS_STATES
+} from '../constants/messageTypes.js';
 import DeviceManager from '../managers/device.js';
 import McpService from '../services/mcp.js';
 import audioConverter from '../utils/audioConverter.js';
@@ -68,7 +75,7 @@ class WebSocketHandler {
 
     // 发送连接确认
     this.sendToClient(ws, {
-      type: 'connection_ack',
+      type: SERVER_MESSAGE_TYPES.CONNECTION_ACK,
       clientId: clientId,
       timestamp: new Date().toISOString()
     });
@@ -198,34 +205,34 @@ class WebSocketHandler {
 
     // 根据消息类型处理
     switch (type) {
-      case 'hello':
-      case 'listen':
-      case 'abort':
-      case 'iot':
-      case 'chat':
+      case CLIENT_MESSAGE_TYPES.HELLO:
+      case CLIENT_MESSAGE_TYPES.LISTEN:
+      case CLIENT_MESSAGE_TYPES.ABORT:
+      case CLIENT_MESSAGE_TYPES.IOT:
+      case CLIENT_MESSAGE_TYPES.CHAT:
         await this.handleProtocolMessage(ws, type, payload);
         break;
-      case 'mcp':
-        console.log(`处理MCP消息 [${ws.clientId}]`);
+      case CLIENT_MESSAGE_TYPES.MCP:
+        // console.log(`处理MCP消息 [${ws.clientId}]`);
         await this.handleMcpMessage(ws, payload);
         break;
-      case 'start_recognition':
+      case CLIENT_MESSAGE_TYPES.START_RECOGNITION:
         console.log(`处理开始识别请求 [${ws.clientId}]`);
         this.sendMessage(ws, {
-          type: 'recognition_started',
+          type: SERVER_MESSAGE_TYPES.RECOGNITION_STARTED,
           sessionId: ws.sessionId,
           message: '语音识别已启动，可以说话了'
         });
         break;
-      case 'audio_data':
+      case CLIENT_MESSAGE_TYPES.AUDIO_DATA:
         console.log(`处理音频数据 [${ws.clientId}]: ${payload.audioData?.length || 0} bytes`);
         this.handleAudioData(ws, payload);
         break;
-      case 'wake_word_detected':
+      case CLIENT_MESSAGE_TYPES.WAKE_WORD_DETECTED:
         console.log(`处理唤醒词检测通知 [${ws.clientId}]: ${payload.keyword}`);
         this.handleWakeWordDetected(ws, payload);
         break;
-      case 'friend':
+      case CLIENT_MESSAGE_TYPES.FRIEND:
         console.log(`处理好友消息 [${ws.clientId}]: 发送给 ${payload.clientid}`);
         await this.handleFriendMessage(ws, payload);
         break;
@@ -370,7 +377,7 @@ class WebSocketHandler {
   async handleProtocolMessage(ws, type, payload) {
     // 处理原始ESP32协议消息
     switch (type) {
-      case 'hello':
+      case CLIENT_MESSAGE_TYPES.HELLO:
         // 支持两种hello消息格式
         const { version, transport, audio_params, device_id, device_name, device_mac, token, features } = payload;
 
@@ -403,7 +410,7 @@ class WebSocketHandler {
         }).sessionId;
 
         this.sendMessage(ws, {
-          type: 'hello',
+          type: SERVER_MESSAGE_TYPES.HELLO,
           transport: 'websocket',
           session_id: ws.sessionId,
           audio_params: ws.audioParams
@@ -415,11 +422,11 @@ class WebSocketHandler {
           console.log(`设备 ${ws.clientId} 支持MCP，发送初始化消息`);
           setTimeout(() => {
             this.sendMcpInitialize(ws);
-          }, 1000); // 延迟1秒发送，确保握手完成
+          }, 100); // 延迟1秒发送，确保握手完成
         }
         break;
 
-      case 'listen':
+      case CLIENT_MESSAGE_TYPES.LISTEN:
         const { state: listenState, mode, text: listenText } = payload;
 
         // 调试日志 - 打印完整的listen消息
@@ -439,14 +446,14 @@ class WebSocketHandler {
         logger.info(`监听状态更新 [${ws.clientId}]: ${listenState}`);
 
         // 处理不同的监听状态
-        if (listenState === 'start') {
+        if (listenState === LISTEN_STATES.START) {
           // 开始监听，清除音频状态
           ws.clientHaveVoice = false;
           ws.clientVoiceStop = false;
           if (ws.sessionId && this.sttService) {
             this.sttService.clearAudioBuffer(ws.sessionId);
           }
-        } else if (listenState === 'stop') {
+        } else if (listenState === LISTEN_STATES.STOP) {
           // 停止监听，触发语音识别
           logger.info(`🔴 收到手动停止消息，准备触发语音识别`);
           ws.clientVoiceStop = true;
@@ -478,7 +485,7 @@ class WebSocketHandler {
           } else {
             logger.warn(`无法触发识别: sttService=${!!this.sttService}, sessionId=${sessionId}`);
           }
-        } else if (listenState === 'detect') {
+        } else if (listenState === LISTEN_STATES.DETECT) {
           // 检测模式，处理文本
           ws.clientHaveVoice = false;
           ws.clientVoiceStop = false;
@@ -490,7 +497,7 @@ class WebSocketHandler {
         }
         break;
 
-      case 'abort':
+      case CLIENT_MESSAGE_TYPES.ABORT:
         const { reason } = payload;
         console.log(`会话终止 [${ws.sessionId}]: ${reason || '未知原因'} (${ws.clientId})`);
         // 清除会话数据
@@ -505,18 +512,18 @@ class WebSocketHandler {
         }
         break;
 
-      case 'iot':
+      case CLIENT_MESSAGE_TYPES.IOT:
         const { descriptors, states } = payload;
         console.log(`收到IoT消息 [${ws.clientId}]: descriptors=${!!descriptors}, states=${!!states}`);
         break;
 
-      case 'chat':
+      case CLIENT_MESSAGE_TYPES.CHAT:
         const { text: chatText, state: chatState } = payload;
-        if (chatState === 'complete' && chatText) {
+        if (chatState === CHAT_STATES.COMPLETE && chatText) {
           console.log(`收到聊天消息 [${ws.clientId}]: ${chatText}`);
           // 转发用户消息给客户端显示
           this.sendMessage(ws, {
-            type: 'stt',
+            type: SERVER_MESSAGE_TYPES.STT,
             session_id: ws.sessionId,
             text: chatText,
             timestamp: new Date().toISOString()
@@ -524,6 +531,9 @@ class WebSocketHandler {
           // 处理完整的聊天消息
           this.handleCompleteChatMessage(ws, chatText);
         }
+        break;
+      case CLIENT_MESSAGE_TYPES.MCP:
+        console.log(`收到MCP消息 [${ws.clientId}]: ${JSON.stringify(payload)}`);
         break;
     }
   }
@@ -540,132 +550,23 @@ class WebSocketHandler {
     try {
       console.log(`开始处理聊天消息 [${connectionId}]: ${text}`);
 
-      // 1. 发送处理开始状态
-      // this.sendMessage(ws, {
-      //   type: 'processing',
-      //   session_id: sessionId,
-      //   state: 'start',
-      //   timestamp: new Date().toISOString()
-      // });
 
       // 2. 调用LLM生成回复
-      console.log(`调用LLM服务生成回复...`);
-      let llmResponse;
-
-      if (this.llmService && this.llmService.isConfigured()) {
-        // 追加人设
-        const personaPrompt = this.getPersonaPrompt();
-        const textWithPersona = `${personaPrompt}\n\n用户说: ${text}`;
-
-        try {
-          llmResponse = await this.llmService.chat(connectionId, textWithPersona);
-          console.log(`LLM回复生成成功: ${llmResponse.substring(0, 50)}...`);
-        } catch (llmError) {
-          console.error(`LLM调用失败: ${llmError.message}`);
-          // LLM失败时使用默认回复
-          llmResponse = `我听到了你说的"${text}"。有什么我可以帮助你的吗？`;
-        }
-      } else {
-        // 没有配置LLM时使用默认回复
-        llmResponse = `我听到了你说的"${text}"。有什么我可以帮助你的吗？`;
-        console.log(`使用默认回复: ${llmResponse}`);
-      }
+      const llmResponse = await this.generateLlmResponse(ws, text);
 
       // 3. 发送LLM回复消息
-      this.sendMessage(ws, {
-        type: 'llm',
-        session_id: sessionId,
-        text: llmResponse,
-        emotion: this.detectEmotion(llmResponse),
-        timestamp: new Date().toISOString()
-      });
-      //http://127.0.0.1:9999/xiaozhi/ota/
-      // 4. 开始TTS合成
-      console.log(`开始TTS语音合成...`);
-      this.sendMessage(ws, {
-        type: 'tts',
-        session_id: sessionId,
-        state: 'start',
-        timestamp: new Date().toISOString()
-      });
+      this.sendLlmResponse(ws, sessionId, llmResponse);
 
-      // 5. 调用TTS服务生成音频
-      if (this.ttsService && this.ttsService.isEnabled()) {
-        try {
-          const ttsResult = await this.ttsService.synthesize(llmResponse);
-          console.log(`✅ TTS合成完成: ${ttsResult.audio?.length || ttsResult.length} bytes`);
+      // 4. 调用TTS合成并发送音频
+      await this.sendTtsAudio(ws, sessionId, llmResponse);
 
-          // 6. 发送TTS状态消息 - sentence_start
-          this.sendMessage(ws, {
-            type: 'tts',
-            session_id: sessionId,
-            state: 'sentence_start',
-            text: llmResponse,
-            timestamp: new Date().toISOString()
-          });
-
-          // 7. 将MP3音频转换为Opus帧并发送
-          const audioBuffer = ttsResult.audio || ttsResult;
-          const opusFrames = await audioConverter.mp3ToOpusFrames(audioBuffer);
-          console.log(`🎵 Opus编码完成: ${opusFrames.length} 帧`);
-
-          // 8. 发送Opus音频帧（二进制）
-          await this.sendOpusAudioFrames(ws, opusFrames, sessionId);
-
-          // 9. 发送TTS停止消息
-          this.sendMessage(ws, {
-            type: 'tts',
-            session_id: sessionId,
-            state: 'stop',
-            timestamp: new Date().toISOString()
-          });
-
-        } catch (ttsError) {
-          console.error(`❌ TTS合成失败: ${ttsError.message}`);
-          // TTS失败时发送文本作为备选
-          this.sendMessage(ws, {
-            type: 'tts_fallback',
-            session_id: sessionId,
-            text: llmResponse,
-            error: ttsError.message,
-            timestamp: new Date().toISOString()
-          });
-        }
-      } else {
-        // TTS服务未启用时发送文本
-        console.log(`TTS服务未启用，发送文本回复`);
-        this.sendMessage(ws, {
-          type: 'tts_disabled',
-          session_id: sessionId,
-          text: llmResponse,
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // 7. 发送处理完成状态
-      // this.sendMessage(ws, {
-      //   type: 'processing',
-      //   session_id: sessionId,
-      //   state: 'complete',
-      //   timestamp: new Date().toISOString()
-      // });
-
-      console.log(`聊天消息处理完成 [${connectionId}]`);
+      logger.info(`聊天消息处理完成 [${connectionId}]`);
 
     } catch (error) {
       console.error(`处理聊天消息失败 [${connectionId}]:`, error);
 
       // 发送错误消息
       this.sendError(ws, `处理消息失败: ${error.message}`, sessionId);
-
-      // 发送处理结束状态
-      // this.sendMessage(ws, {
-      //   type: 'processing',
-      //   session_id: sessionId,
-      //   state: 'error',
-      //   error: error.message,
-      //   timestamp: new Date().toISOString()
-      // });
     }
   }
 
@@ -713,6 +614,158 @@ class WebSocketHandler {
     const charsPerSecond = 3;
     const seconds = text.length / charsPerSecond;
     return Math.round(seconds * 1000);
+  }
+
+  /**
+   * 生成LLM回复
+   * @param {string} connectionId - 连接ID
+   * @param {string} text - 用户输入文本
+   * @param {boolean} includePersona - 是否包含人设提示词（默认true）
+   * @returns {Promise<string>} LLM回复文本
+   */
+  async generateLlmResponse(ws, text, includePersona = true) {
+    // 构造默认回复
+    const defaultResponse = `我听到了你说的"${text}"。有什么我可以帮助你的吗？`;
+    let connectionId = ws.clientId;
+    if (this.llmService && this.llmService.isConfigured()) {
+      // 构造输入文本
+      const inputText = includePersona
+        ? `${this.getPersonaPrompt()}\n\n用户说: ${text}`
+        : text;
+
+      try {
+        const response = await this.llmService.chat(connectionId, inputText);
+        console.log(`LLM回复生成成功: ${response.substring(0, 50)}...`);
+        return response;
+      } catch (llmError) {
+        console.error(`LLM调用失败: ${llmError.message}`);
+        return defaultResponse;
+      }
+    } else {
+      console.log(`使用默认回复: ${defaultResponse}`);
+      return defaultResponse;
+    }
+  }
+
+  /**
+   * 获取好友消息的会话信息
+   * @param {WebSocket} ws - 源WebSocket连接
+   * @param {Object} targetDevice - 目标设备
+   * @param {Object} messageData - 消息数据
+   * @returns {{sessionId: string, text: string}} 会话ID和文本内容
+   */
+  getFriendMessageContext(ws, targetDevice, messageData) {
+    const sessionId = ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId;
+    const text = messageData.content || messageData.text;
+    return { sessionId, text };
+  }
+
+  /**
+   * 发送STT文本消息
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {string} sessionId - 会话ID
+   * @param {string} text - 文本内容
+   */
+  sendSttResponse(ws, sessionId, text) {
+    this.sendMessage(ws, {
+      type: SERVER_MESSAGE_TYPES.STT,
+      session_id: sessionId,
+      text: text,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * 发送LLM回复消息
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {string} sessionId - 会话ID
+   * @param {string} text - LLM回复文本
+   */
+  sendLlmResponse(ws, sessionId, text) {
+    this.sendMessage(ws, {
+      type: SERVER_MESSAGE_TYPES.LLM,
+      session_id: sessionId,
+      text: text,
+      emotion: this.detectEmotion(text),
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * 发送TTS音频到客户端（完整的TTS流程）
+   * 包含：发送TTS状态、合成音频、转换Opus帧、发送音频帧
+   * @param {WebSocket} ws - WebSocket连接
+   * @param {string} sessionId - 会话ID
+   * @param {string} text - 要合成的文本
+   * @returns {Promise<boolean>} 是否成功发送
+   */
+  async sendTtsAudio(ws, sessionId, text) {
+    console.log(`开始TTS语音合成...`);
+
+    // 1. 发送TTS开始状态
+    this.sendMessage(ws, {
+      type: SERVER_MESSAGE_TYPES.TTS,
+      session_id: sessionId,
+      state: TTS_STATES.START,
+      timestamp: new Date().toISOString()
+    });
+
+    // 2. 调用TTS服务生成音频
+    if (this.ttsService && this.ttsService.isEnabled()) {
+      try {
+        const ttsResult = await this.ttsService.synthesize(text);
+        console.log(`✅ TTS合成完成: ${ttsResult.audio?.length || ttsResult.length} bytes`);
+
+        // 3. 发送TTS状态消息 - sentence_start
+        this.sendMessage(ws, {
+          type: SERVER_MESSAGE_TYPES.TTS,
+          session_id: sessionId,
+          state: TTS_STATES.SENTENCE_START,
+          text: text,
+          timestamp: new Date().toISOString()
+        });
+
+        // 4. 将MP3音频转换为Opus帧并发送
+        const audioBuffer = ttsResult.audio || ttsResult;
+        const opusFrames = await audioConverter.mp3ToOpusFrames(audioBuffer);
+        console.log(`🎵 Opus编码完成: ${opusFrames.length} 帧`);
+
+        // 5. 发送Opus音频帧（二进制）
+        await this.sendOpusAudioFrames(ws, opusFrames, sessionId);
+
+        // 6. 发送TTS停止消息
+        this.sendMessage(ws, {
+          type: SERVER_MESSAGE_TYPES.TTS,
+          session_id: sessionId,
+          state: TTS_STATES.STOP,
+          timestamp: new Date().toISOString()
+        });
+
+        return true;
+
+      } catch (ttsError) {
+        console.error(`❌ TTS合成失败: ${ttsError.message}`);
+        // TTS失败时发送文本作为备选
+        this.sendMessage(ws, {
+          type: SERVER_MESSAGE_TYPES.TTS_FALLBACK,
+          session_id: sessionId,
+          text: text,
+          error: ttsError.message,
+          timestamp: new Date().toISOString()
+        });
+        return false;
+      }
+    } else {
+      // TTS服务未启用时发送文本
+      console.log(`TTS服务未启用，发送文本回复`);
+      this.sendMessage(ws, {
+        type: SERVER_MESSAGE_TYPES.TTS_DISABLED,
+        session_id: sessionId,
+        text: text,
+        timestamp: new Date().toISOString()
+      });
+      return false;
+    }
   }
 
   /**
@@ -830,7 +883,7 @@ class WebSocketHandler {
 
       // 发送接收确认
       this.sendMessage(ws, {
-        type: 'audio_received',
+        type: SERVER_MESSAGE_TYPES.AUDIO_RECEIVED,
         sessionId: currentSessionId,
         timestamp: new Date().toISOString()
       });
@@ -848,7 +901,7 @@ class WebSocketHandler {
 
     // 发送确认响应
     this.sendMessage(ws, {
-      type: 'wake_word_acknowledged',
+      type: SERVER_MESSAGE_TYPES.WAKE_WORD_ACKNOWLEDGED,
       keyword: keyword,
       confidence: confidence,
       timestamp: timestamp,
@@ -863,7 +916,7 @@ class WebSocketHandler {
     console.log(`开始会话 ${sessionId} 的语音识别`);
 
     this.sendMessage(ws, {
-      type: 'recognition_started',
+      type: SERVER_MESSAGE_TYPES.RECOGNITION_STARTED,
       sessionId: sessionId,
       message: '语音识别已启动，可以说话了'
     });
@@ -886,6 +939,23 @@ class WebSocketHandler {
     if (data === undefined || data === null) {
       this.sendError(ws, '消息内容不能为空', ws.sessionId);
       return;
+    }
+
+    // 验证data格式 - 支持结构化数据 {type: "消息类型", ...}
+    let messageData = data;
+    if (typeof data === 'object' && data !== null) {
+      // 已经是结构化数据，验证必需字段
+      if (!data.type) {
+        this.sendError(ws, '结构化消息必须包含type字段', ws.sessionId);
+        return;
+      }
+      messageData = data;
+    } else {
+      // 如果是字符串或其他基本类型，包装成结构化格式
+      messageData = {
+        type: 'text',
+        content: data
+      };
     }
 
     // 获取目标客户端
@@ -919,34 +989,72 @@ class WebSocketHandler {
       return;
     }
 
-    // 构造转发消息
-    const forwardMessage = {
-      type: 'friend',
-      from: ws.clientId,  // 添加发送方ID
-      data: data,
-      timestamp: new Date().toISOString()
-    };
-    //TTS
-    //TODO: 添加TTS功能
-    // 发送给目标客户端
+    // 根据消息类型进行不同处理
+    const messageType = messageData.type;
+
     try {
-      this.sendToClient(targetDevice.connection, forwardMessage);
+      // 提取公共逻辑
+      const { sessionId, text } = this.getFriendMessageContext(ws, targetDevice, messageData);
 
-      // 向发送方确认消息已发送
-      this.sendToClient(ws, {
-        type: 'friend_ack',
-        to: targetClientId,
-        data: data,
-        timestamp: new Date().toISOString(),
-        status: 'sent'
-      });
+      if (messageType === 'tts') {
+        // tts类型 - 转换成语音发送
+        await this.sendTtsAudio(targetDevice.connection, sessionId, text);
+      }
+      else if (messageType === 'sst') {
+        // sst类型 - 直接发送文本，如果是hard设备发送语音
+        if (targetDevice.type === 'hard' && this.ttsService) {
+          await this.sendTtsAudio(targetDevice.connection, sessionId, text);
+        } else {
+          this.sendSttResponse(targetDevice.connection, sessionId, text);
+        }
+      }
+      else if (messageType === 'llm') {
+        //generateLlmResponse
+        let llmResponse = await this.generateLlmResponse(ws, text);
+        // sst类型 - 直接发送文本，如果是hard设备发送语音
+        if (targetDevice.type === 'hard' && this.ttsService) {
+          await this.sendTtsAudio(targetDevice.connection, sessionId, llmResponse);
+        } else {
+          this.sendSttResponse(targetDevice.connection, sessionId, llmResponse);
+        }
+      }
+      else if (messageType === 'mcp') {
 
-      console.log(`✅ 好友消息转发成功: ${ws.clientId} -> ${targetClientId}`);
+        let payload1 = {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "tools/list",
+        };
 
+        let payload2 = {
+          "jsonrpc": "2.0",
+          "method": "tools/call",
+          "params": {
+            "name": "self.light.set_rgb",
+            "arguments": { "r": 255, "g": 0, "b": 0 }
+          }
+        };
+        const mcpCmd =
+        {
+          "session_id": sessionId,
+          "type": "mcp",
+          "payload": payload1,
+          "id": 2
+        }
+        this.sendMessage(targetDevice.connection, {
+          type: SERVER_MESSAGE_TYPES.MCP,
+          payload: payload1
+        });
+      }
+      else {
+        // 默认处理 - 直接转发好友消息
+        await this.handleDefaultFriendMessage(ws, targetDevice, messageData, targetClientId);
+      }
     } catch (error) {
-      console.error(`❌ 好友消息转发失败:`, error);
-      this.sendError(ws, `消息发送失败: ${error.message}`, ws.sessionId);
+      console.error(`❌ 好友消息处理失败:`, error);
+      this.sendError(ws, `消息处理失败: ${error.message}`, ws.sessionId);
     }
+
   }
 
   async handleWakeWordResponse(ws, wakeWordResult, sessionId) {
@@ -1001,7 +1109,7 @@ class WebSocketHandler {
    */
   sendError(ws, errorMessage, sessionId = null) {
     const errorResponse = {
-      type: 'error',
+      type: SERVER_MESSAGE_TYPES.ERROR,
       message: errorMessage
     };
 
@@ -1057,6 +1165,329 @@ class WebSocketHandler {
     return sessionId;
   }
 
+  /**
+   * 处理SST类型好友消息 - 直接发送文本，如果是hard设备也发送语音
+   */
+  async handleSSTFriendMessage(ws, targetDevice, messageData, targetClientId) {
+    console.log(`📝 处理SST好友消息: ${messageData.content || messageData.text}`);
+
+    // 构造文本消息
+    const textMessage = {
+      type: 'stt',
+      from: ws.clientId,
+      session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+      text: messageData.content || messageData.text,
+      timestamp: new Date().toISOString()
+    };
+
+
+
+    // 如果是hard设备，也发送语音
+    if (targetDevice.type === 'hard' && this.ttsService) {
+      try {
+        const ttsMessage = {
+          type: 'tts',
+          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+          text: messageData.content || messageData.text,
+          timestamp: new Date().toISOString()
+        };
+        this.sendToClient(targetDevice.connection, ttsMessage);
+        console.log(`🔊 为hard设备额外发送TTS消息`);
+      } catch (error) {
+        console.warn(`为hard设备发送TTS失败:`, error.message);
+      }
+    }
+    // 发送文本消息
+    this.sendToClient(targetDevice.connection, textMessage);
+
+    // 向发送方确认
+    // this.sendToClient(ws, {
+    //   type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
+    //   to: targetClientId,
+    //   data: messageData,
+    //   timestamp: new Date().toISOString(),
+    //   status: 'sent'
+    // });
+
+    console.log(`✅ SST好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
+  }
+
+  /**
+   * 处理LLM类型好友消息 - 经过大模型处理后以语音模式发送
+   */
+  async handleLLMFriendMessage(ws, targetDevice, messageData, targetClientId) {
+    console.log(`🤖 处理LLM好友消息: ${messageData.content || messageData.prompt}`);
+
+    try {
+      // 使用LLM服务处理消息
+      if (this.llmService) {
+        const prompt = messageData.content || messageData.prompt;
+        const llmResponse = await this.llmService.generateResponse(prompt);
+
+        // 构造LLM回复消息
+        const llmMessage = {
+          type: 'llm',
+          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+          text: llmResponse.text,
+          timestamp: new Date().toISOString()
+        };
+
+        // 发送LLM回复
+        this.sendToClient(targetDevice.connection, llmMessage);
+
+        // 转换为语音发送
+        if (this.ttsService) {
+          const ttsMessage = {
+            type: 'tts',
+            session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+            text: llmResponse.text,
+            timestamp: new Date().toISOString()
+          };
+          this.sendToClient(targetDevice.connection, ttsMessage);
+        }
+
+        console.log(`✅ LLM处理完成并发送语音: ${llmResponse.text}`);
+      } else {
+        // 如果没有LLM服务，直接转发原文本
+        const fallbackMessage = {
+          type: 'stt',
+          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+          text: messageData.content || messageData.prompt,
+          timestamp: new Date().toISOString()
+        };
+        this.sendToClient(targetDevice.connection, fallbackMessage);
+        console.log(`⚠️ LLM服务不可用，发送原文本`);
+      }
+    } catch (error) {
+      console.error(`LLM处理失败:`, error);
+      // 出错时发送错误信息
+      const errorMessage = {
+        type: 'error',
+        message: 'LLM处理失败: ' + error.message,
+        timestamp: new Date().toISOString()
+      };
+      this.sendToClient(targetDevice.connection, errorMessage);
+    }
+
+    // 向发送方确认
+    this.sendToClient(ws, {
+      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
+      to: targetClientId,
+      data: messageData,
+      timestamp: new Date().toISOString(),
+      status: 'sent'
+    });
+
+    console.log(`✅ LLM好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
+  }
+
+  /**
+   * 处理MCP类型好友消息 - 调用对应客户端的MCP能力
+   */
+  async handleMCPFriendMessage(ws, targetDevice, messageData, targetClientId) {
+    console.log(`🔧 处理MCP好友消息: ${messageData.content || messageData.action}`);
+
+    try {
+      // 构造MCP消息
+      const mcpMessage = {
+        type: 'mcp',
+        session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+        action: messageData.content || messageData.action,
+        timestamp: new Date().toISOString()
+      };
+
+      // 发送给目标客户端
+      this.sendToClient(targetDevice.connection, mcpMessage);
+
+      console.log(`✅ MCP消息已发送到客户端`);
+    } catch (error) {
+      console.error(`MCP消息发送失败:`, error);
+      // 发送错误信息
+      const errorMessage = {
+        type: 'error',
+        message: 'MCP消息发送失败: ' + error.message,
+        timestamp: new Date().toISOString()
+      };
+      this.sendToClient(targetDevice.connection, errorMessage);
+    }
+
+    // 向发送方确认
+    this.sendToClient(ws, {
+      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
+      to: targetClientId,
+      data: messageData,
+      timestamp: new Date().toISOString(),
+      status: 'sent'
+    });
+
+    console.log(`✅ MCP好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
+  }
+
+  /**
+   * 处理默认好友消息 - 直接转发
+   */
+  async handleDefaultFriendMessage(ws, targetDevice, messageData, targetClientId) {
+    // 构造转发消息
+    const forwardMessage = {
+      type: SERVER_MESSAGE_TYPES.FRIEND,
+      from: ws.clientId,
+      data: messageData,
+      timestamp: new Date().toISOString()
+    };
+
+    // 发送给目标客户端
+    this.sendToClient(targetDevice.connection, forwardMessage);
+
+    // 向发送方确认消息已发送
+    this.sendToClient(ws, {
+      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
+      to: targetClientId,
+      data: messageData,
+      timestamp: new Date().toISOString(),
+      status: 'sent'
+    });
+
+    console.log(`✅ 默认好友消息转发成功: ${ws.clientId} -> ${targetClientId}`);
+  }
+
+  /**
+   * 处理LLM类型好友消息 - 经过大模型处理后以语音模式发送
+   */
+  async handleLLMFriendMessage(ws, targetDevice, messageData, targetClientId) {
+    console.log(`🤖 处理LLM好友消息: ${messageData.content || messageData.prompt}`);
+
+    try {
+      // 使用LLM服务处理消息
+      if (this.llmService) {
+        const prompt = messageData.content || messageData.prompt;
+        const llmResponse = await this.llmService.generateResponse(prompt);
+
+        // 构造LLM回复消息
+        const llmMessage = {
+          type: 'llm',
+          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+          text: llmResponse.text,
+          timestamp: new Date().toISOString()
+        };
+
+        // 发送LLM回复
+        this.sendToClient(targetDevice.connection, llmMessage);
+
+        // 转换为语音发送
+        if (this.ttsService) {
+          const ttsMessage = {
+            type: 'tts',
+            session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+            text: llmResponse.text,
+            timestamp: new Date().toISOString()
+          };
+          this.sendToClient(targetDevice.connection, ttsMessage);
+        }
+
+        console.log(`✅ LLM处理完成并发送语音: ${llmResponse.text}`);
+      } else {
+        // 如果没有LLM服务，直接转发原文本
+        const fallbackMessage = {
+          type: 'stt',
+          session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+          text: messageData.content || messageData.prompt,
+          timestamp: new Date().toISOString()
+        };
+        this.sendToClient(targetDevice.connection, fallbackMessage);
+        console.log(`⚠️ LLM服务不可用，发送原文本`);
+      }
+    } catch (error) {
+      console.error(`LLM处理失败:`, error);
+      // 出错时发送错误信息
+      const errorMessage = {
+        type: 'error',
+        message: 'LLM处理失败: ' + error.message,
+        timestamp: new Date().toISOString()
+      };
+      this.sendToClient(targetDevice.connection, errorMessage);
+    }
+
+    // 向发送方确认
+    this.sendToClient(ws, {
+      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
+      to: targetClientId,
+      data: messageData,
+      timestamp: new Date().toISOString(),
+      status: 'sent'
+    });
+
+    console.log(`✅ LLM好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
+  }
+
+  /**
+   * 处理MCP类型好友消息 - 调用对应客户端的MCP能力
+   */
+  async handleMCPFriendMessage(ws, targetDevice, messageData, targetClientId) {
+    console.log(`🔧 处理MCP好友消息: ${messageData.content || messageData.action}`);
+
+    try {
+      // 构造MCP消息
+      const mcpMessage = {
+        type: 'mcp',
+        session_id: ws.sessionId || this.sessionManager.createSession({ clientId: targetDevice.clientId }).sessionId,
+        action: messageData.content || messageData.action,
+        timestamp: new Date().toISOString()
+      };
+
+      // 发送给目标客户端
+      this.sendToClient(targetDevice.connection, mcpMessage);
+
+      console.log(`✅ MCP消息已发送到客户端`);
+    } catch (error) {
+      console.error(`MCP消息发送失败:`, error);
+      // 发送错误信息
+      const errorMessage = {
+        type: 'error',
+        message: 'MCP消息发送失败: ' + error.message,
+        timestamp: new Date().toISOString()
+      };
+      this.sendToClient(targetDevice.connection, errorMessage);
+    }
+
+    // 向发送方确认
+    this.sendToClient(ws, {
+      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
+      to: targetClientId,
+      data: messageData,
+      timestamp: new Date().toISOString(),
+      status: 'sent'
+    });
+
+    console.log(`✅ MCP好友消息处理完成: ${ws.clientId} -> ${targetClientId}`);
+  }
+
+  /**
+   * 处理默认好友消息 - 直接转发
+   */
+  async handleDefaultFriendMessage(ws, targetDevice, messageData, targetClientId) {
+    // 构造转发消息
+    const forwardMessage = {
+      type: SERVER_MESSAGE_TYPES.FRIEND,
+      from: ws.clientId,
+      data: messageData,
+      timestamp: new Date().toISOString()
+    };
+
+    // 发送给目标客户端
+    this.sendToClient(targetDevice.connection, forwardMessage);
+
+    // 向发送方确认消息已发送
+    this.sendToClient(ws, {
+      type: SERVER_MESSAGE_TYPES.FRIEND_ACK,
+      to: targetClientId,
+      data: messageData,
+      timestamp: new Date().toISOString(),
+      status: 'sent'
+    });
+
+    console.log(`✅ 默认好友消息转发成功: ${ws.clientId} -> ${targetClientId}`);
+  }
+
   // 广播消息给所有连接的客户端
   broadcast(message, excludeClientId = null) {
     const dm = this.getDeviceManager();
@@ -1073,31 +1504,6 @@ class WebSocketHandler {
     });
   }
 
-  // 发送TTS音频数据
-  sendTtsAudio(clientId, audioData, sessionId = null) {
-    const dm = this.getDeviceManager();
-    if (!dm || !dm.getDevice) {
-      throw new Error(`设备管理器未初始化`);
-    }
-
-    const device = dm.getDevice(clientId);
-
-    if (!device || !device.connection) {
-      throw new Error(`设备未连接: ${clientId}`);
-    }
-
-    // 发送二进制音频数据
-    device.connection.send(audioData);
-
-    // 发送TTS状态更新
-    if (sessionId) {
-      this.sendToClient(device.connection, {
-        session_id: sessionId,
-        type: 'tts',
-        state: 'playing'
-      });
-    }
-  }
 
   // 发送聊天响应
   sendChatResponse(clientId, text, sessionId = null) {
