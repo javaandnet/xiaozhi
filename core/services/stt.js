@@ -354,7 +354,19 @@ class SttService extends BaseService {
       // 检查解码结果是否有效（非全零）
       if (pcmData && pcmData.length > 0) {
         // opusscript 返回的是 Int16Array 或类似格式
-        const int16Array = pcmData instanceof Int16Array ? pcmData : new Int16Array(pcmData.buffer || pcmData);
+        // 注意：opusscript 的 decode 返回值可能是 Buffer 或 Int16Array
+        // 其底层 ArrayBuffer 可能比实际数据大，需要正确提取有效数据
+        let int16Array;
+        if (pcmData instanceof Int16Array) {
+          int16Array = pcmData;
+        } else if (Buffer.isBuffer(pcmData)) {
+          // 如果是 Buffer，直接返回（已经是正确大小）
+          // 但需要只取前 frameSize 个样本
+          const validBytes = Math.min(pcmData.length, this.frameSize * 2);
+          return pcmData.slice(0, validBytes);
+        } else {
+          int16Array = new Int16Array(pcmData.buffer || pcmData);
+        }
 
         // 验证解码质量
         let maxAmplitude = 0;
@@ -362,10 +374,17 @@ class SttService extends BaseService {
           maxAmplitude = Math.max(maxAmplitude, Math.abs(int16Array[i]));
         }
 
-        // console.log(`[${this.name}] Opus解码: ${opusData.length} bytes -> ${pcmData.length} bytes, 最大振幅: ${maxAmplitude}`);
+        // 只提取有效的样本数据（frameSize 个样本 = frameSize * 2 字节）
+        // opusscript 可能返回更多数据，但我们只需要编码时的 frameSize
+        const validSamples = Math.min(int16Array.length, this.frameSize);
+        const validBytes = validSamples * 2; // 16-bit = 2 bytes per sample
 
-        // 转换为Buffer返回
-        return Buffer.from(int16Array.buffer);
+        // 正确提取有效数据：使用 byteOffset 和 有效字节长度
+        return Buffer.from(
+          int16Array.buffer,
+          int16Array.byteOffset,
+          validBytes
+        );
       }
       return Buffer.alloc(0);
     } catch (error) {
@@ -414,7 +433,7 @@ class SttService extends BaseService {
   async _handleVoiceStop(session, audioData) {
     const totalStartTime = Date.now();
 
-    console.log(`[${this.name}] 开始处理语音停止，音频帧数: ${audioData.length}`);
+    // console.log(`[${this.name}] 开始处理语音停止，音频帧数: ${audioData.length}`);
 
     try {
       // 准备音频数据（根据格式判断是否需要解码）
@@ -441,7 +460,7 @@ class SttService extends BaseService {
       }
 
       // 进行语音识别
-      console.log(`[${this.name}] 开始调用${this.provider}识别...`);
+      // console.log(`[${this.name}] 开始调用${this.provider}识别...`);
       const recognizeStartTime = Date.now();
       const result = await this._recognizePcm(combinedPcm, session.id);
       const recognizeTime = Date.now() - recognizeStartTime;

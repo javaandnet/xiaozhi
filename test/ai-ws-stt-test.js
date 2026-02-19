@@ -5,7 +5,7 @@
 import fs from 'fs';
 import WebSocket from 'ws';
 
-const SERVER_URL = 'ws://localhost:10096';
+const SERVER_URL = 'ws://localhost:8003';
 
 async function main() {
   console.log('🚀 开始WebSocket STT测试 (Opus格式)');

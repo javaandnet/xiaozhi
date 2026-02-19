@@ -1404,7 +1404,7 @@ class WebSocketHandler {
       const largeFrameRatio = totalFrames > 0 ? largeFrameCount / totalFrames : 0;
       const avgLargeFrameSize = largeFrameCount > 0 ? largeFrameTotalSize / largeFrameCount : 0;
 
-      let detectedFormat = 'opus';
+      let detectedFormat = 'pcm';
       let pcmData = null;
 
       if (largeFrameRatio > 0.3 && avgLargeFrameSize > 1000) {
@@ -1433,6 +1433,7 @@ class WebSocketHandler {
           if (pcmFrames.length > 0) {
             combinedPcm = Buffer.concat(pcmFrames);
           }
+          detectedFormat = 'pcm';
         }
 
         if (combinedPcm && combinedPcm.length > 0) {
