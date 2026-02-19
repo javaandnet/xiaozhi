@@ -104,7 +104,7 @@ module.exports = {
       funasr: {
         // 服务器模式配置
         host: process.env.FUNASR_HOST || 'localhost',
-        port: parseInt(process.env.FUNASR_PORT) || 10095,
+        port: 10096,
         is_ssl: process.env.FUNASR_SSL === 'true',
         api_key: process.env.FUNASR_API_KEY || 'none',
         serverUrl: process.env.FUNASR_SERVER_URL,  // 兼容旧配置
@@ -155,6 +155,27 @@ module.exports = {
       minConfidence: 0.6,
       language: 'zh-CN',
       enable: true
+    },
+
+    // RAG 服务配置
+    rag: {
+      enabled: process.env.RAG_ENABLED === 'true' || false,
+      qdrant: {
+        url: process.env.QDRANT_URL || 'http://localhost:6333',
+        apiKey: process.env.QDRANT_API_KEY || '',
+        collection: process.env.QDRANT_COLLECTION || 'knowledge_base'
+      },
+      embedding: {
+        provider: process.env.EMBEDDING_PROVIDER || 'openai',
+        baseUrl: process.env.EMBEDDING_BASE_URL || '',  // 自定义 Embedding 服务地址
+        model: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+        apiKey: process.env.OPENAI_API_KEY || '',
+        dimension: parseInt(process.env.EMBEDDING_DIMENSION) || 1536
+      },
+      search: {
+        limit: parseInt(process.env.RAG_SEARCH_LIMIT) || 5,
+        scoreThreshold: parseFloat(process.env.RAG_SCORE_THRESHOLD) || 0.7
+      }
     }
   }
 };

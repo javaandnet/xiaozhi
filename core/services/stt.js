@@ -153,7 +153,7 @@ class SttService extends BaseService {
     const config = this.providerConfig;
 
     const host = config.host || process.env.FUNASR_HOST || 'localhost';
-    const port = config.port || process.env.FUNASR_PORT || 10095;
+    const port = config.port || process.env.FUNASR_PORT || 10096;
     // 默认不使用SSL（本地部署通常不需要SSL）
     const isSsl = config.is_ssl === true || process.env.FUNASR_SSL === 'true';
 
@@ -168,7 +168,7 @@ class SttService extends BaseService {
       mode: config.mode || 'offline',
       chunkSize: config.chunk_size || [5, 10, 5],
       chunkInterval: config.chunk_interval || 10,
-      itn: config.itn !== false,  // 逆文本标准化
+      itn: false,  // SenseVoice模式不支持ITN，关闭此选项
     };
 
     // 检查是否配置了服务器
@@ -341,6 +341,11 @@ class SttService extends BaseService {
     }
 
     try {
+      // 验证输入数据
+      if (!opusData || opusData.length === 0) {
+        return Buffer.alloc(0);
+      }
+
       // opusscript 解码需要指定帧大小（样本数）
       // 对于 60ms 帧 @ 16kHz: frameSize = 16000 * 0.06 = 960 样本
       // 对于 20ms 帧 @ 48kHz: frameSize = 48000 * 0.02 = 960 样本
@@ -348,17 +353,24 @@ class SttService extends BaseService {
 
       // 检查解码结果是否有效（非全零）
       if (pcmData && pcmData.length > 0) {
-        const int16Array = new Int16Array(pcmData.buffer || pcmData);
+        // opusscript 返回的是 Int16Array 或类似格式
+        const int16Array = pcmData instanceof Int16Array ? pcmData : new Int16Array(pcmData.buffer || pcmData);
+
+        // 验证解码质量
         let maxAmplitude = 0;
         for (let i = 0; i < Math.min(100, int16Array.length); i++) {
           maxAmplitude = Math.max(maxAmplitude, Math.abs(int16Array[i]));
         }
+
         // console.log(`[${this.name}] Opus解码: ${opusData.length} bytes -> ${pcmData.length} bytes, 最大振幅: ${maxAmplitude}`);
-        return Buffer.from(pcmData);
+
+        // 转换为Buffer返回
+        return Buffer.from(int16Array.buffer);
       }
       return Buffer.alloc(0);
     } catch (error) {
       // opusscript 内部 buffer detach 问题，单帧丢失不影响整体识别
+      logger.debug(`[${this.name}] Opus解码警告（数据包 ${opusData.length} bytes）: ${error.message}`);
       return Buffer.alloc(0);
     }
   }
@@ -370,14 +382,25 @@ class SttService extends BaseService {
    */
   _decodeOpusFrames(opusFrames) {
     const pcmFrames = [];
+    let errorCount = 0;
 
-    for (const frame of opusFrames) {
+    for (let i = 0; i < opusFrames.length; i++) {
+      const frame = opusFrames[i];
       if (!frame || frame.length === 0) continue;
 
-      const pcmData = this._decodeOpus(frame);
-      if (pcmData && pcmData.length > 0) {
-        pcmFrames.push(pcmData);
+      try {
+        const pcmData = this._decodeOpus(frame);
+        if (pcmData && pcmData.length > 0) {
+          pcmFrames.push(pcmData);
+        }
+      } catch (error) {
+        errorCount++;
+        logger.warn(`[${this.name}] Opus解码错误，跳过数据包 ${i}: ${error.message}`);
       }
+    }
+
+    if (errorCount > 0) {
+      logger.info(`[${this.name}] Opus解码完成，总帧数: ${opusFrames.length}, 成功: ${pcmFrames.length}, 失败: ${errorCount}`);
     }
 
     return pcmFrames;
@@ -389,45 +412,82 @@ class SttService extends BaseService {
    * @param {Buffer[]} audioData - 音频数据数组
    */
   async _handleVoiceStop(session, audioData) {
-    const startTime = Date.now();
+    const totalStartTime = Date.now();
 
     console.log(`[${this.name}] 开始处理语音停止，音频帧数: ${audioData.length}`);
 
     try {
-      // 解码Opus音频
-      const pcmFrames = this._decodeOpusFrames(audioData);
-      console.log(`[${this.name}] Opus解码完成，PCM帧数: ${pcmFrames.length}`);
+      // 准备音频数据（根据格式判断是否需要解码）
+      let pcmFrames;
+      const audioFormat = session.audioFormat || 'pcm';
+
+      if (audioFormat === 'pcm') {
+        pcmFrames = audioData;
+      } else {
+        // 解码Opus音频
+        const decodeStartTime = Date.now();
+        pcmFrames = this._decodeOpusFrames(audioData);
+        const decodeTime = Date.now() - decodeStartTime;
+        console.log(`[${this.name}] Opus解码完成，PCM帧数: ${pcmFrames.length}，耗时: ${decodeTime}ms`);
+      }
 
       const combinedPcm = Buffer.concat(pcmFrames);
       console.log(`[${this.name}] PCM数据大小: ${combinedPcm.length} bytes`);
 
+      // 验证音频数据
       if (combinedPcm.length === 0) {
         console.warn(`[${this.name}] 没有有效的PCM数据`);
-        return;
+        return null;
       }
 
       // 进行语音识别
-      console.log(`[${this.name}] 开始调用FunASR识别...`);
+      console.log(`[${this.name}] 开始调用${this.provider}识别...`);
+      const recognizeStartTime = Date.now();
       const result = await this._recognizePcm(combinedPcm, session.id);
+      const recognizeTime = Date.now() - recognizeStartTime;
 
-      const processTime = Date.now() - startTime;
-      console.log(`[${this.name}] 识别完成，耗时: ${processTime}ms, 结果: ${JSON.stringify(result)}`);
+      // 性能监控
+      const totalTime = Date.now() - totalStartTime;
+      // console.log(`[${this.name}] 识别完成，识别耗时: ${recognizeTime}ms，总耗时: ${totalTime}ms`);
+      logger.debug(`[${this.name}] 性能统计 - 解码: ${audioFormat === 'opus' ? recognizeTime - totalTime + 'ms' : '0ms'}, 识别: ${recognizeTime}ms, 总计: ${totalTime}ms`);
+
+      // 处理识别结果
+      let enhancedText = result.text;
+
+      // 判断结果类型
+      if (typeof result.parsed === 'object' && result.parsed !== null) {
+        // FunASR 返回的结构化数据
+        console.log(`[${this.name}] 识别内容: ${result.parsed.content}`);
+        if (result.parsed.language) {
+          console.log(`[${this.name}] 识别语言: ${result.parsed.language}`);
+        }
+        if (result.parsed.emotion) {
+          console.log(`[${this.name}] 识别情绪: ${result.parsed.emotion}`);
+        }
+      } else if (result.text) {
+        // 纯文本结果
+        console.log(`[${this.name}] 识别文本: ${result.text}`);
+      }
 
       // 触发结果回调
       if (this.onResult && result.text) {
-        console.log(`[${this.name}] 触发结果回调: ${session.id}`);
+        // console.log(`[${this.name}] 触发结果回调: ${session.id}`);
         this.onResult(session.id, result);
       } else {
-        console.warn(`[${this.name}] 未触发回调: onResult=${!!this.onResult}, text=${result.text}`);
+        // console.warn(`[${this.name}] 未触发回调: onResult=${!!this.onResult}, text=${result.text}`);
       }
 
       return result;
     } catch (error) {
       console.error(`[${this.name}] 处理语音停止失败:`, error.message);
       console.error(error.stack);
+      logger.error(`[${this.name}] 异常详情: ${error.stack}`);
+
       if (this.onError) {
         this.onError(session.id, error);
       }
+
+      return null;
     }
   }
 
@@ -709,8 +769,6 @@ class SttService extends BaseService {
       let timeoutId = null;
 
       ws.on('open', () => {
-        console.log(`[${this.name}] FunASR WebSocket连接成功`);
-
         // 发送配置消息 - 参照Python实现
         const configMessage = JSON.stringify({
           mode: this.funasrConfig.mode,
@@ -720,17 +778,14 @@ class SttService extends BaseService {
           is_speaking: true,
           itn: this.funasrConfig.itn
         });
-
         ws.send(configMessage);
-        console.log(`[${this.name}] 发送配置消息: ${configMessage}`);
-
         // 发送PCM数据
         ws.send(pcmData);
 
         // 发送结束消息
         const endMessage = JSON.stringify({ is_speaking: false });
         ws.send(endMessage);
-        console.log(`[${this.name}] 发送结束消息: ${endMessage}`);
+
 
         // 设置超时
         timeoutId = setTimeout(() => {
@@ -787,13 +842,12 @@ class SttService extends BaseService {
 
       ws.on('error', (error) => {
         clearTimeout(timeoutId);
-        console.error(`[${this.name}] FunASR WebSocket错误:`, error.message);
+        // console.error(`[${this.name}] FunASR WebSocket错误:`, error.message);
         reject(new Error(`FunASR连接失败: ${error.message}`));
       });
 
       ws.on('close', () => {
         clearTimeout(timeoutId);
-        console.log(`[${this.name}] FunASR WebSocket关闭`);
 
         // 如果还没有返回结果，返回已识别的文本
         if (recognizedText) {

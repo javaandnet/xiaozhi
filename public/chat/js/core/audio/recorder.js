@@ -1,24 +1,21 @@
-// Audio recording module
+// Audio recording module - 使用原生 MediaRecorder API
 import { log } from '../../utils/logger.js?v=0205';
-import { initOpusEncoder } from './opus-codec.js?v=0205';
 import { getAudioPlayer } from './player.js?v=0205';
 
-// Audio recorder class
+// Audio recorder class - 使用原生 MediaRecorder
 export class AudioRecorder {
     constructor() {
         this.isRecording = false;
         this.audioContext = null;
         this.analyser = null;
-        this.audioProcessor = null;
-        this.audioProcessorType = null;
         this.audioSource = null;
-        this.opusEncoder = null;
-        this.pcmDataBuffer = new Int16Array();
+        this.mediaRecorder = null;
         this.audioBuffers = [];
         this.totalAudioSize = 0;
         this.visualizationRequest = null;
         this.recordingTimer = null;
         this.websocket = null;
+        this.mediaStream = null;
         // Callback functions
         this.onRecordingStart = null;
         this.onRecordingStop = null;
@@ -35,168 +32,24 @@ export class AudioRecorder {
         return getAudioPlayer().getAudioContext();
     }
 
-    // Initialize encoder
-    initEncoder() {
-        if (!this.opusEncoder) {
-            this.opusEncoder = initOpusEncoder();
-        }
-        return this.opusEncoder;
-    }
-
-    // PCM processor code
-    getAudioProcessorCode() {
-        return `
-            class AudioRecorderProcessor extends AudioWorkletProcessor {
-                constructor() {
-                    super();
-                    this.buffers = [];
-                    this.frameSize = 960;
-                    this.buffer = new Int16Array(this.frameSize);
-                    this.bufferIndex = 0;
-                    this.isRecording = false;
-                    this.port.onmessage = (event) => {
-                        if (event.data.command === 'start') {
-                            this.isRecording = true;
-                            this.port.postMessage({ type: 'status', status: 'started' });
-                        } else if (event.data.command === 'stop') {
-                            this.isRecording = false;
-                            if (this.bufferIndex > 0) {
-                                const finalBuffer = this.buffer.slice(0, this.bufferIndex);
-                                this.port.postMessage({ type: 'buffer', buffer: finalBuffer });
-                                this.bufferIndex = 0;
-                            }
-                            this.port.postMessage({ type: 'status', status: 'stopped' });
-                        }
-                    };
-                }
-                process(inputs, outputs, parameters) {
-                    if (!this.isRecording) return true;
-                    const input = inputs[0][0];
-                    if (!input) return true;
-                    for (let i = 0; i < input.length; i++) {
-                        if (this.bufferIndex >= this.frameSize) {
-                            this.port.postMessage({ type: 'buffer', buffer: this.buffer.slice(0) });
-                            this.bufferIndex = 0;
-                        }
-                        this.buffer[this.bufferIndex++] = Math.max(-32768, Math.min(32767, Math.floor(input[i] * 32767)));
-                    }
-                    return true;
-                }
+    // 检查支持的 MIME 类型
+    getSupportedMimeType() {
+        const types = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/ogg;codecs=opus',
+            'audio/ogg'
+        ];
+        
+        for (const type of types) {
+            if (MediaRecorder.isTypeSupported(type)) {
+                log(`使用音频格式: ${type}`, 'info');
+                return type;
             }
-            registerProcessor('audio-recorder-processor', AudioRecorderProcessor);
-        `;
-    }
-
-    // Create audio processor
-    async createAudioProcessor() {
-        this.audioContext = this.getAudioContext();
-        try {
-            if (this.audioContext.audioWorklet) {
-                const blob = new Blob([this.getAudioProcessorCode()], { type: 'application/javascript' });
-                const url = URL.createObjectURL(blob);
-                await this.audioContext.audioWorklet.addModule(url);
-                URL.revokeObjectURL(url);
-                const audioProcessor = new AudioWorkletNode(this.audioContext, 'audio-recorder-processor');
-                audioProcessor.port.onmessage = (event) => {
-                    if (event.data.type === 'buffer') {
-                        this.processPCMBuffer(event.data.buffer);
-                    }
-                };
-                log('使用AudioWorklet处理音频', 'success');
-                const silent = this.audioContext.createGain();
-                silent.gain.value = 0;
-                audioProcessor.connect(silent);
-                silent.connect(this.audioContext.destination);
-                return { node: audioProcessor, type: 'worklet' };
-            } else {
-                log('AudioWorklet不可用，使用ScriptProcessorNode作为后备方案', 'warning');
-                return this.createScriptProcessor();
-            }
-        } catch (error) {
-            log(`创建音频处理器失败: ${error.message}，尝试后备方案`, 'error');
-            return this.createScriptProcessor();
         }
-    }
-
-    // Create ScriptProcessor as fallback
-    createScriptProcessor() {
-        try {
-            const frameSize = 4096;
-            const scriptProcessor = this.audioContext.createScriptProcessor(frameSize, 1, 1);
-            scriptProcessor.onaudioprocess = (event) => {
-                if (!this.isRecording) return;
-                const input = event.inputBuffer.getChannelData(0);
-                const buffer = new Int16Array(input.length);
-                for (let i = 0; i < input.length; i++) {
-                    buffer[i] = Math.max(-32768, Math.min(32767, Math.floor(input[i] * 32767)));
-                }
-                this.processPCMBuffer(buffer);
-            };
-            const silent = this.audioContext.createGain();
-            silent.gain.value = 0;
-            scriptProcessor.connect(silent);
-            silent.connect(this.audioContext.destination);
-            log('使用ScriptProcessorNode作为后备方案成功', 'warning');
-            return { node: scriptProcessor, type: 'processor' };
-        } catch (fallbackError) {
-            log(`后备方案也失败: ${fallbackError.message}`, 'error');
-            return null;
-        }
-    }
-
-    // Process PCM buffer data
-    processPCMBuffer(buffer) {
-        if (!this.isRecording) return;
-        const newBuffer = new Int16Array(this.pcmDataBuffer.length + buffer.length);
-        newBuffer.set(this.pcmDataBuffer);
-        newBuffer.set(buffer, this.pcmDataBuffer.length);
-        this.pcmDataBuffer = newBuffer;
-        const samplesPerFrame = 960;
-        while (this.pcmDataBuffer.length >= samplesPerFrame) {
-            const frameData = this.pcmDataBuffer.slice(0, samplesPerFrame);
-            this.pcmDataBuffer = this.pcmDataBuffer.slice(samplesPerFrame);
-            this.encodeAndSendOpus(frameData);
-        }
-    }
-
-    // Encode and send Opus data
-    encodeAndSendOpus(pcmData = null) {
-        if (!this.opusEncoder) {
-            log('Opus编码器未初始化', 'error');
-            return;
-        }
-        try {
-            if (pcmData) {
-                const opusData = this.opusEncoder.encode(pcmData);
-                if (opusData && opusData.length > 0) {
-                    this.audioBuffers.push(opusData.buffer);
-                    this.totalAudioSize += opusData.length;
-                    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-                        try {
-                            this.websocket.send(opusData.buffer);
-                        } catch (error) {
-                            log(`WebSocket发送错误: ${error.message}`, 'error');
-                        }
-                    }
-                } else {
-                    log('Opus编码失败，未返回有效数据', 'error');
-                }
-            } else {
-                if (this.pcmDataBuffer.length > 0) {
-                    const samplesPerFrame = 960;
-                    if (this.pcmDataBuffer.length < samplesPerFrame) {
-                        const paddedBuffer = new Int16Array(samplesPerFrame);
-                        paddedBuffer.set(this.pcmDataBuffer);
-                        this.encodeAndSendOpus(paddedBuffer);
-                    } else {
-                        this.encodeAndSendOpus(this.pcmDataBuffer.slice(0, samplesPerFrame));
-                    }
-                    this.pcmDataBuffer = new Int16Array(0);
-                }
-            }
-        } catch (error) {
-            log(`Opus编码错误: ${error.message}`, 'error');
-        }
+        
+        log('浏览器不支持 Opus 编码，将使用默认编码', 'warning');
+        return '';
     }
 
     // Start recording
@@ -214,14 +67,11 @@ export class AudioRecorder {
                     log('已发送中止消息', 'info');
                 }
             }
-            if (!this.initEncoder()) {
-                log('无法开始录音: Opus编码器初始化失败', 'error');
-                return false;
-            }
+
             log('请至少录制1-2秒音频以确保收集足够的数据', 'info');
 
             // 请求麦克风权限 - 在移动设备上需要用户交互触发
-            const stream = await navigator.mediaDevices.getUserMedia({
+            this.mediaStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
@@ -237,25 +87,63 @@ export class AudioRecorder {
                 await this.audioContext.resume();
                 log('录音前已恢复音频上下文', 'info');
             }
-            const processorResult = await this.createAudioProcessor();
-            if (!processorResult) {
-                log('无法创建音频处理器', 'error');
-                return false;
-            }
-            this.audioProcessor = processorResult.node;
-            this.audioProcessorType = processorResult.type;
-            this.audioSource = this.audioContext.createMediaStreamSource(stream);
+
+            // 创建音频分析器（用于可视化）
+            this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 2048;
             this.audioSource.connect(this.analyser);
-            this.audioSource.connect(this.audioProcessor);
-            this.pcmDataBuffer = new Int16Array();
+
+            // 重置缓冲区
             this.audioBuffers = [];
             this.totalAudioSize = 0;
+
+            // 获取支持的 MIME 类型
+            const mimeType = this.getSupportedMimeType();
+
+            // 创建 MediaRecorder
+            const options = mimeType ? { mimeType, audioBitsPerSecond: 16000 } : { audioBitsPerSecond: 16000 };
+            this.mediaRecorder = new MediaRecorder(this.mediaStream, options);
+
+            // 数据可用时触发
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0 && this.isRecording) {
+                    this.audioBuffers.push(event.data);
+                    this.totalAudioSize += event.data.size;
+
+                    // 通过 WebSocket 发送数据
+                    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                        event.data.arrayBuffer().then(buffer => {
+                            try {
+                                this.websocket.send(buffer);
+                                log(`发送音频数据: ${buffer.byteLength} bytes`, 'debug');
+                            } catch (error) {
+                                log(`WebSocket发送错误: ${error.message}`, 'error');
+                            }
+                        });
+                    }
+                }
+            };
+
+            // 录音开始
+            this.mediaRecorder.onstart = () => {
+                log('MediaRecorder 已启动', 'success');
+            };
+
+            // 录音停止
+            this.mediaRecorder.onstop = () => {
+                log('MediaRecorder 已停止', 'info');
+            };
+
+            // 错误处理
+            this.mediaRecorder.onerror = (error) => {
+                log(`MediaRecorder 错误: ${error.message || error}`, 'error');
+            };
+
+            // 开始录音
             this.isRecording = true;
-            if (this.audioProcessorType === 'worklet' && this.audioProcessor.port) {
-                this.audioProcessor.port.postMessage({ command: 'start' });
-            }
+            this.mediaRecorder.start(100); // 每100ms触发一次 ondataavailable
+
             // Send listening start message
             if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                 const listenStartMsg = JSON.stringify({ type: 'listen', state: 'start' });
@@ -263,17 +151,21 @@ export class AudioRecorder {
                 log(`已发送录音开始消息: ${listenStartMsg}`, 'info');
             } else {
                 log('WebSocket未连接，无法发送开始消息', 'error');
+                this.isRecording = false;
                 return false;
             }
+
             // Start visualization
             if (this.onVisualizerUpdate) {
                 const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
                 this.startVisualization(dataArray);
             }
+
             // Immediately notify recording start, update button state
             if (this.onRecordingStart) {
                 this.onRecordingStart(0);
             }
+
             // Start recording timer
             let recordingSeconds = 0;
             this.recordingTimer = setInterval(() => {
@@ -282,10 +174,11 @@ export class AudioRecorder {
                     this.onRecordingStart(recordingSeconds);
                 }
             }, 100);
-            log('已开始PCM直接录音', 'success');
+
+            log('已开始 MediaRecorder 录音', 'success');
             return true;
         } catch (error) {
-            log(`直接录音启动错误: ${error.message}`, 'error');
+            log(`录音启动错误: ${error.message}`, 'error');
             this.isRecording = false;
             return false;
         }
@@ -305,50 +198,59 @@ export class AudioRecorder {
     }
 
     // Stop recording
-    stop() {
+    async stop() {
         if (!this.isRecording) return false;
         try {
             this.isRecording = false;
-            if (this.audioProcessor) {
-                if (this.audioProcessorType === 'worklet' && this.audioProcessor.port) {
-                    this.audioProcessor.port.postMessage({ command: 'stop' });
-                }
-                this.audioProcessor.disconnect();
-                this.audioProcessor = null;
+
+            // 停止 MediaRecorder
+            if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                this.mediaRecorder.stop();
             }
+
+            // 停止媒体流
+            if (this.mediaStream) {
+                this.mediaStream.getTracks().forEach(track => track.stop());
+                this.mediaStream = null;
+            }
+
             if (this.audioSource) {
                 this.audioSource.disconnect();
                 this.audioSource = null;
             }
+
             if (this.visualizationRequest) {
                 cancelAnimationFrame(this.visualizationRequest);
                 this.visualizationRequest = null;
             }
+
             if (this.recordingTimer) {
                 clearInterval(this.recordingTimer);
                 this.recordingTimer = null;
             }
-            // Encode and send remaining data
-            this.encodeAndSendOpus();
+
             // Send listen stop message
             if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                 const listenStopMsg = JSON.stringify({ type: 'listen', state: 'stop' });
                 this.websocket.send(listenStopMsg);
                 log('已发送录音停止消息: ' + listenStopMsg, 'info');
             }
+
             // Send end signal (empty frame)
             if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-                const emptyOpusFrame = new Uint8Array(0);
-                this.websocket.send(emptyOpusFrame);
+                const emptyFrame = new Uint8Array(0);
+                this.websocket.send(emptyFrame);
                 log('已发送空帧作为结束信号', 'info');
             }
+
             if (this.onRecordingStop) {
                 this.onRecordingStop();
             }
-            log('已停止PCM直接录音', 'success');
+
+            log(`已停止 MediaRecorder 录音，总数据量: ${this.totalAudioSize} bytes`, 'success');
             return true;
         } catch (error) {
-            log(`直接录音停止错误: ${error.message}`, 'error');
+            log(`录音停止错误: ${error.message}`, 'error');
             return false;
         }
     }
