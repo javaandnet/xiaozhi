@@ -1,0 +1,33 @@
+[0;32m================================[0m
+[0;32mFunASR SenseVoice 快速启动[0m
+[0;32m================================[0m
+
+[1;33m删除旧容器...[0m
+funasr-sensevoice
+[0;32m拉取 Docker 镜像...[0m
+funasr-runtime-sdk-cpu-0.4.5: Pulling from funasr_repo/funasr
+Digest: sha256:cfff1d5da68fc4bce1876b4fcb0d07835133ddde7524bfcceb7fe4f26c3672c7
+Status: Image is up to date for registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-cpu-0.4.5
+registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-cpu-0.4.5
+[0;32m启动容器...[0m
+12400751421ca2f372caec63cb35362b7dfaef8799434f53d670bd60e74924c8
+[0;32m启动 FunASR 服务 (SenseVoice 模式)...[0m
+[1;33m等待服务启动 (约 20-30 秒)...[0m
+[1;33m  等待中... 5s[0m
+[1;33m  等待中... 10s[0m
+[1;33m  等待中... 15s[0m
+[1;33m  等待中... 20s[0m
+[1;33m  等待中... 25s[0m
+[1;33m  等待中... 30s[0m
+[1;33m  等待中... 35s[0m
+[1;33m  等待中... 40s[0m
+
+[0;32m================================[0m
+[0;32m服务状态[0m
+[0;32m================================[0m
+
+Error: No such container: funasr-sensevoice
+[0;31m✗ 服务进程未找到[0m
+
+[1;33m查看日志:[0m
+Error: No such container: funasr-sensevoice

@@ -336,7 +336,7 @@ class WebSocketHandler {
       // 如果之前有声音，现在没有声音，且静默时间超过阈值
       if (ws.clientHaveVoice && !clientHaveVoice) {
         const silenceDuration = now - (ws.lastVoiceTime || now);
-        logger.info(`检测到静默: ${silenceDuration}ms (阈值: ${SILENCE_THRESHOLD_MS}ms)`);
+        // logger.info(`检测到静默: ${silenceDuration}ms (阈值: ${SILENCE_THRESHOLD_MS}ms)`);
         if (silenceDuration >= SILENCE_THRESHOLD_MS) {
           logger.info(`✅ 检测到语音停止，静默时间: ${silenceDuration}ms，触发识别`);
           ws.clientVoiceStop = true;
@@ -1640,40 +1640,133 @@ class WebSocketHandler {
 
   /**
    * 检测语音活动（VAD）
+   * 参照 Python silero.py 实现
    * @param {WebSocket} ws - WebSocket连接
-   * @param {Buffer} audioData - 音频数据
+   * @param {Buffer} opusPacket - Opus音频数据包
    * @returns {boolean} 是否有语音
    */
-  async _detectVoice(ws, audioData) {
-    // 如果有VAD服务，使用VAD服务
-    if (this.vadService && this.vadService.isEnabled()) {
-      return this.vadService.detect(audioData);
+  async _detectVoice(ws, opusPacket) {
+    // 手动模式：直接返回True，不进行实时VAD检测，所有音频都缓存
+    if (ws.clientListenMode === 'manual') {
+      return true;
     }
 
-    // 简单的能量检测VAD
-    if (!audioData || audioData.length === 0) {
+    // 如果有VAD服务且已启用，使用VAD服务
+    if (this.vadService && this.vadService.isEnabled()) {
+      return this.vadService.detect(opusPacket);
+    }
+
+    // 初始化连接级别的VAD状态（参照Python conn对象）
+    if (!ws.vadState) {
+      ws.vadState = {
+        audioBuffer: Buffer.alloc(0),      // client_audio_buffer: PCM音频缓冲区
+        voiceWindow: [],                    // client_voice_window: 滑动窗口
+        haveVoice: false,                   // client_have_voice: 当前是否有语音
+        lastIsVoice: false,                 // last_is_voice: 上一帧是否有语音
+        lastActivityTime: Date.now(),       // last_activity_time: 最后活动时间
+        voiceStop: false                    // client_voice_stop: 语音是否停止
+      };
+    }
+
+    const state = ws.vadState;
+
+    try {
+      // Opus解码为PCM（参照Python: pcm_frame = self.decoder.decode(opus_packet, 960)）
+      let pcmFrame = null;
+      if (this.sttService && this.sttService.decoder) {
+        try {
+          // 解码Opus包为PCM（16000Hz, 60ms帧）
+          pcmFrame = this.sttService.decoder.decode(opusPacket, 960);
+        } catch (e) {
+          logger.debug(`Opus解码失败: ${e.message}`);
+          return false;
+        }
+      } else {
+        // 如果没有Opus解码器，使用原始数据作为近似
+        pcmFrame = opusPacket;
+      }
+
+      if (!pcmFrame || pcmFrame.length === 0) {
+        return false;
+      }
+
+      // 将新数据加入缓冲区（参照Python: conn.client_audio_buffer.extend(pcm_frame)）
+      state.audioBuffer = Buffer.concat([state.audioBuffer, pcmFrame]);
+
+      // VAD配置参数（参照Python silero.py）
+      const VAD_THRESHOLD = this.config.vad?.threshold || 0.001;           // 高阈值
+      const VAD_THRESHOLD_LOW = this.config.vad?.thresholdLow || 0.0008;    // 低阈值
+      const SILENCE_THRESHOLD_MS = this.config.vad?.silenceThresholdMs || 1000;  // 静默阈值
+      const FRAME_WINDOW_THRESHOLD = 3;                                  // 至少3帧才算有语音
+      const SAMPLES_PER_FRAME = 512;                                     // 每帧512采样点
+      const BYTES_PER_SAMPLE = 2;                                        // 16bit = 2 bytes
+
+      let clientHaveVoice = false;
+
+      // 处理缓冲区中的完整帧（每次处理512采样点）
+      while (state.audioBuffer.length >= SAMPLES_PER_FRAME * BYTES_PER_SAMPLE) {
+        // 提取前512个采样点（1024字节）
+        const chunk = state.audioBuffer.slice(0, SAMPLES_PER_FRAME * BYTES_PER_SAMPLE);
+        state.audioBuffer = state.audioBuffer.slice(SAMPLES_PER_FRAME * BYTES_PER_SAMPLE);
+
+        // 计算音频能量（简单能量检测替代Silero模型）
+        // 参照Python: audio_int16 = np.frombuffer(chunk, dtype=np.int16)
+        const audioInt16 = new Int16Array(chunk.buffer, chunk.byteOffset, SAMPLES_PER_FRAME);
+
+        // 计算RMS能量并归一化到0-1范围（类似Python: audio_float32 = audio_int16.astype(np.float32) / 32768.0）
+        let sumSquares = 0;
+        for (let i = 0; i < audioInt16.length; i++) {
+          const sample = audioInt16[i] / 32768.0;
+          sumSquares += sample * sample;
+        }
+        const rmsEnergy = Math.sqrt(sumSquares / audioInt16.length);
+
+        // 双阈值判断（参照Python silero.py 第71-77行）
+        let isVoice;
+        if (rmsEnergy >= VAD_THRESHOLD) {
+          isVoice = true;
+        } else if (rmsEnergy <= VAD_THRESHOLD_LOW) {
+          isVoice = false;
+        } else {
+          // 在中间区域，延续前一个状态
+          isVoice = state.lastIsVoice;
+        }
+        // 声音没低于最低值则延续前一个状态（参照Python第80行）
+        state.lastIsVoice = isVoice;
+
+        // 更新滑动窗口（参照Python: conn.client_voice_window.append(is_voice)）
+        state.voiceWindow.push(isVoice);
+        // 保持窗口大小（最多10帧）
+        if (state.voiceWindow.length > 10) {
+          state.voiceWindow.shift();
+        }
+
+        // 判断是否有语音（窗口内超过阈值数量的帧有声音）
+        const trueCount = state.voiceWindow.filter(v => v).length;
+        clientHaveVoice = trueCount >= FRAME_WINDOW_THRESHOLD;
+
+        // 如果之前有声音，但本次没有声音，且与上次有声音的时间差已经超过了静默阈值
+        // 则认为已经说完一句话（参照Python第88-92行）
+        if (state.haveVoice && !clientHaveVoice) {
+          const stopDuration = Date.now() - state.lastActivityTime;
+          if (stopDuration >= SILENCE_THRESHOLD_MS) {
+            state.voiceStop = true;
+            logger.debug(`检测到语音停止，静默时间: ${stopDuration}ms`);
+          }
+        }
+
+        // 如果有语音，更新状态和时间戳（参照Python第93-95行）
+        if (clientHaveVoice) {
+          state.haveVoice = true;
+
+          state.lastActivityTime = Date.now();
+        }
+      }
+      return clientHaveVoice;
+    } catch (error) {
+      logger.error(`VAD处理错误: ${error.message}`);
       return false;
     }
-
-    // 忽略太小的帧（可能是噪音）
-    // if (audioData.length < 10) {
-    //   return false;
-    // }
-
-    // Opus帧的能量检测
-    let energy = 0;
-    const sampleCount = Math.min(audioData.length, 160);
-
-    for (let i = 0; i < sampleCount; i++) {
-      energy += Math.abs(audioData[i]);
-    }
-    energy /= sampleCount;
-
-    // 提高阈值，避免噪音误判
-    const threshold = this.config.vad?.threshold || 50;
-    const hasVoice = energy > threshold;
-
-    return hasVoice;
   }
 
   /**

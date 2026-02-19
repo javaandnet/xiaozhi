@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 测试配置
-const TEST_TEXT = '新年快乐万事如意';
+const TEST_TEXT = '新年快乐,万事如意,模拟模式';
 const OUTPUT_DIR = path.join(__dirname, '../data/stt-test-output');
 
 async function ensureOutputDir() {
