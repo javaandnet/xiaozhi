@@ -1,6 +1,6 @@
+import { join } from 'path';
 import winston from 'winston';
 import { settings, VERSION } from '../config/index.js';
-import { join } from 'path';
 
 // 确保日志目录存在
 import { mkdirSync } from 'fs';

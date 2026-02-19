@@ -1,5 +1,5 @@
-import { dbConnection } from './connection.js';
 import { getLogger } from '../core/logger.js';
+import { dbConnection } from './connection.js';
 
 const logger = getLogger('voiceprintDb');
 
@@ -33,8 +33,8 @@ class VoiceprintDB {
      */
     async getVoiceprints(speakerIds = null) {
         const startTime = Date.now();
-        const queryType = speakerIds 
-            ? `指定ID查询(${speakerIds.length}个)` 
+        const queryType = speakerIds
+            ? `指定ID查询(${speakerIds.length}个)`
             : '全量查询';
         logger.info(`开始数据库查询: ${queryType}`);
 
@@ -57,8 +57,8 @@ class VoiceprintDB {
             const voiceprints = {};
             for (const row of results) {
                 // MySQL 返回的是 Buffer，需要转换为 Float32Array
-                const buffer = Buffer.isBuffer(row.feature_vector) 
-                    ? row.feature_vector 
+                const buffer = Buffer.isBuffer(row.feature_vector)
+                    ? row.feature_vector
                     : Buffer.from(row.feature_vector);
                 voiceprints[row.speaker_id] = new Float32Array(buffer.buffer, buffer.byteOffset, buffer.length / 4);
             }
@@ -84,7 +84,7 @@ class VoiceprintDB {
         try {
             const sql = 'DELETE FROM voiceprints WHERE speaker_id = ?';
             const result = await dbConnection.execute(sql, [speakerId]);
-            
+
             if (result.affectedRows > 0) {
                 logger.info(`声纹特征删除成功: ${speakerId}`);
                 return true;

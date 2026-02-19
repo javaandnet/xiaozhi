@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import yaml from 'js-yaml';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +17,7 @@ class Config {
 
     _loadConfig() {
         const configPath = join(process.cwd(), 'data', '.voiceprint.yaml');
-        
+
         let config;
         try {
             const fileContent = readFileSync(configPath, 'utf8');
