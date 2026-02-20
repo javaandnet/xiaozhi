@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../../utils/logger.js';
 import {
@@ -370,7 +368,7 @@ class WebSocketHandler {
       if (Array.isArray(data)) {
         logger.warn(`⚠️ 收到数组格式数据，长度: ${data.length}, 第一项类型: ${typeof data[0]}`);
       }
-      
+
       await this.sttService.receiveAudio(sessionId, data, {
         hasVoice,
         format: ws.audioParams?.format || 'opus'
@@ -1395,129 +1393,52 @@ class WebSocketHandler {
     // 清空缓冲区
     session.audioBuffer = [];
     session.voiceStop = false;
-
     logger.info(`📦 音频缓冲区帧数: ${audioBuffer.length}`);
-
     if (audioBuffer.length < 15) {
       logger.debug(`音频数据不足，跳过识别: ${audioBuffer.length} 帧`);
       return;
     }
 
-    // ========== 调试：保存音频到文件 ==========
     let wavBufferForVoiceprint = null;
     try {
-      const timestamp = Date.now();
-      // const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
-      // if (!fs.existsSync(debugDir)) {
-      //   fs.mkdirSync(debugDir, { recursive: true });
-      // }
-
-      // 合并所有 Opus 帧
-      const combinedOpus = Buffer.concat(audioBuffer);
-
-      // 保存原始 Opus 数据
-      // const opusFile = path.join(debugDir, `audio-${timestamp}.opus`);
-      // fs.writeFileSync(opusFile, combinedOpus);
-      // logger.info(`💾 已保存 Opus 音频: ${opusFile} (${combinedOpus.length} bytes)`);
-
-      // ========== 自动检测音频格式 ==========
-      // PCM @ 16kHz, 16bit, mono, 60ms = 1920 bytes (960 samples * 2 bytes)
-      // Opus 帧大小通常较小（几十到几百字节）
-
-      // 统计大帧和小帧的数量
-      let largeFrameCount = 0;
-      let smallFrameCount = 0;
-      let largeFrameTotalSize = 0;
-
-      for (const frame of audioBuffer) {
-        if (frame && frame.length > 500) {
-          largeFrameCount++;
-          largeFrameTotalSize += frame.length;
-        } else if (frame && frame.length > 0) {
-          smallFrameCount++;
-        }
-      }
-
-
-      let detectedFormat = 'pcm';
-      let pcmData = null;
-
-      // 如果大帧占多数（超过30%），认为是 PCM 格式
-      const totalFrames = largeFrameCount + smallFrameCount;
-      const largeFrameRatio = totalFrames > 0 ? largeFrameCount / totalFrames : 0;
-      const avgLargeFrameSize = largeFrameCount > 0 ? largeFrameTotalSize / largeFrameCount : 0;
-
-
-
-      if (largeFrameRatio > 0.3 && avgLargeFrameSize > 1000) {
-        detectedFormat = 'pcm';
-        // logger.info(`🔍 检测到 PCM 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 大帧平均: ${avgLargeFrameSize.toFixed(0)} bytes)`);
-        // 只使用大帧作为 PCM 数据
-        const largeFrames = audioBuffer.filter(f => f && f.length > 500);
-        pcmData = Buffer.concat(largeFrames);
-      } else {
-        detectedFormat = 'opus';
-        // logger.info(`🔍 检测到 Opus 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 小帧: ${smallFrameCount}, 大帧: ${largeFrameCount})`);
-      }
-      // ========== 格式检测结束 ==========
-
       // 解码 Opus 为 PCM 并保存为 WAV
-      try {
-        let combinedPcm;
-
-        if (detectedFormat === 'pcm') {
-          // 已是 PCM，直接使用
-          combinedPcm = pcmData;
-          logger.info(`📊 直接使用 PCM 数据: ${combinedPcm.length} bytes`);
-        } else {
-          // Opus 格式，需要解码
-          const pcmFrames = this.sttService._decodeOpusFrames(audioBuffer);
-          if (pcmFrames.length > 0) {
-            combinedPcm = Buffer.concat(pcmFrames);
-          }
-          detectedFormat = 'pcm';
-        }
-
-        if (combinedPcm && combinedPcm.length > 0) {
-          // 检查音频数据是否有效（非静音）
-          // 使用设备特定阈值或默认阈值
-          const thresholds = ws.audioThresholds || this.defaultAudioThresholds;
-          const audioStats = this._analyzeAudioAmplitude(combinedPcm, thresholds);
-          logger.info(`📊 音频振幅分析: 最大=${audioStats.maxAmplitude}, 平均=${audioStats.avgAmplitude.toFixed(2)}, 有效=${audioStats.isValid} (阈值: max=${thresholds.minMaxAmplitude}, avg=${thresholds.minAvgAmplitude})`);
-
-          if (!audioStats.isValid) {
-            logger.warn(`⚠️ 音频数据无效（静音或振幅过低），跳过识别`);
-            return;
-          }
-
-          // 创建 WAV 文件头
-          const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
-          wavBufferForVoiceprint = this._createWavBuffer(combinedPcm, 16000, 1, 16);
-          const wavFile = path.join(debugDir, `audio-${timestamp}.wav`);
-          fs.writeFileSync(wavFile, wavBufferForVoiceprint);
-          logger.info(`💾 已保存 WAV 音频: ${wavFile} (${wavBufferForVoiceprint.length} bytes)`);
-
-          // 如果是 PCM 格式，直接发送给 FunASR 识别
-          if (detectedFormat === 'pcm') {
-            logger.info(`🎤 使用 PCM 数据直接调用 FunASR 识别...`);
-            const result = await this.sttService._recognizeWithFunAsr(combinedPcm, sessionId);
-            logger.info(`✅ 识别结果: ${JSON.stringify(result)}`);
-            if (this.sttService.onResult && result.text) {
-              this.sttService.onResult(sessionId, result);
-            }
-            return; // 直接返回，不再调用后面的识别
-          }
-        } else {
-          logger.warn(`解码后没有 PCM 数据`);
-        }
-      } catch (decodeError) {
-        logger.warn(`解码音频失败: ${decodeError.message}`);
-        logger.error(decodeError.stack);
+      let combinedPcm;
+      const pcmFrames = this.sttService._decodeOpusFrames(audioBuffer);
+      if (pcmFrames.length > 0) {
+        combinedPcm = Buffer.concat(pcmFrames);
       }
-    } catch (saveError) {
-      logger.warn(`保存音频文件失败: ${saveError.message}`);
+      if (combinedPcm && combinedPcm.length > 0) {
+        // 检查音频数据是否有效（非静音）
+        // 使用设备特定阈值或默认阈值
+        const thresholds = ws.audioThresholds || this.defaultAudioThresholds;
+        const audioStats = this._analyzeAudioAmplitude(combinedPcm, thresholds);
+        logger.info(`📊 音频振幅分析: 最大=${audioStats.maxAmplitude}, 平均=${audioStats.avgAmplitude.toFixed(2)}, 有效=${audioStats.isValid} (阈值: max=${thresholds.minMaxAmplitude}, avg=${thresholds.minAvgAmplitude})`);
+        if (!audioStats.isValid) {
+          logger.warn(`⚠️ 音频数据无效（静音或振幅过低），跳过识别`);
+          return;
+        }
+
+        // 创建 WAV 文件头
+        // const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
+        // wavBufferForVoiceprint = this._createWavBuffer(combinedPcm, 16000, 1, 16);
+        // const wavFile = path.join(debugDir, `audio-${timestamp}.wav`);
+        // fs.writeFileSync(wavFile, wavBufferForVoiceprint);
+        // logger.info(`💾 已保存 WAV 音频: ${wavFile} (${wavBufferForVoiceprint.length} bytes)`);
+
+        // 如果是 PCM 格式，直接发送给 FunASR 识别
+        logger.info(`🎤 使用 PCM 数据直接调用 FunASR 识别...`);
+        const result = await this.sttService._recognizeWithFunAsr(combinedPcm, sessionId);
+        logger.info(`✅ 识别结果: ${JSON.stringify(result)}`);
+        if (this.sttService.onResult && result.text) {
+          this.sttService.onResult(sessionId, result);
+        }
+        return; // 直接返回，不再调用后面的识别
+      }
+    } catch (decodeError) {
+      logger.warn(`解码音频失败: ${decodeError.message}`);
+      logger.error(decodeError.stack);
     }
-    // ========== 调试结束 ==========
+
 
     try {
       // 并发执行 STT 识别和声纹识别

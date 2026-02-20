@@ -28,10 +28,10 @@ export async function webSocketConnect(otaUrl, config) {
     // 例如：如果页面是 https://localhost:8003，则使用 localhost 而不是 IP
     const pageHost = window.location.host; // 包含端口号
     const pageProtocol = window.location.protocol; // http: 或 https:
-    
+
     // 替换host为当前页面的host
     connUrl.host = pageHost;
-    
+
     // 根据当前页面协议自动调整 WebSocket 协议
     // 如果页面是 https，则使用 wss；如果是 http，则使用 ws
     const isSecurePage = pageProtocol === 'https:';

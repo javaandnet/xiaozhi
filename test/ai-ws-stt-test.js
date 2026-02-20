@@ -52,9 +52,11 @@ async function main() {
 
   console.log(`✅ Opus编码完成: ${opusFrames.length} 帧`);
 
-  // 连接WebSocket
+  // 连接WebSocket（接受自签名证书）
   console.log('\n📦 步骤3: 连接WebSocket服务器...');
-  const ws = new WebSocket(SERVER_URL);
+  const ws = new WebSocket(SERVER_URL, {
+    rejectUnauthorized: false  // 接受自签名证书
+  });
 
   ws.on('open', async () => {
     console.log('✅ WebSocket连接成功');
