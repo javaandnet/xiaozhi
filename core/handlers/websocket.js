@@ -33,6 +33,12 @@ class WebSocketHandler {
     this.mcpService = options.mcpService || new McpService();
     this.voiceprintService = options.voiceprintService;
 
+    // 音频有效性检测默认阈值（可被设备设置覆盖）
+    this.defaultAudioThresholds = {
+      minMaxAmplitude: this.config.audio?.minMaxAmplitude || 500,
+      minAvgAmplitude: this.config.audio?.minAvgAmplitude || 50
+    };
+
     // 注册到设备管理器
     if (this.deviceManager && !this.deviceManager.addDevice) {
       // 使用内部的deviceManager实例
@@ -347,7 +353,7 @@ class WebSocketHandler {
       if (ws.clientHaveVoice) {
         const silenceDuration = now - (ws.lastVoiceTime || now);
         if (silenceDuration >= 200) { // 200ms无有效数据
-          logger.info(`✅ 收到空帧，触发识别 (静默: ${silenceDuration}ms)`);
+          // logger.info(`✅ 收到空帧，触发识别 (静默: ${silenceDuration}ms)`);
           ws.clientVoiceStop = true;
         }
       }
@@ -359,6 +365,12 @@ class WebSocketHandler {
       }
 
       // 接收音频并处理
+      // 调试：检查数据格式
+      logger.debug(`收到音频数据类型: ${typeof data}, 是Buffer: ${Buffer.isBuffer(data)}, 是Array: ${Array.isArray(data)}, 长度: ${data?.length}`);
+      if (Array.isArray(data)) {
+        logger.warn(`⚠️ 收到数组格式数据，长度: ${data.length}, 第一项类型: ${typeof data[0]}`);
+      }
+      
       await this.sttService.receiveAudio(sessionId, data, {
         hasVoice,
         format: ws.audioParams?.format || 'opus'
@@ -1014,6 +1026,35 @@ class WebSocketHandler {
         } else {
           this.sendSttResponse(targetDevice.connection, sessionId, sendText);
         }
+      } else if (messageType === 'device') {
+        // device类型 - 修改设备配置（如音频阈值）
+        const { audio_thresholds } = messageData;
+
+        if (!audio_thresholds) {
+          this.sendError(ws, 'device消息缺少配置参数', ws.sessionId);
+          return;
+        }
+
+        // 更新目标设备的音频阈值设置
+        targetDevice.connection.audioThresholds = {
+          minMaxAmplitude: audio_thresholds.minMaxAmplitude || this.defaultAudioThresholds.minMaxAmplitude,
+          minAvgAmplitude: audio_thresholds.minAvgAmplitude || this.defaultAudioThresholds.minAvgAmplitude
+        };
+
+        logger.info(`设备 ${targetClientId} 音频阈值已更新: max=${targetDevice.connection.audioThresholds.minMaxAmplitude}, avg=${targetDevice.connection.audioThresholds.minAvgAmplitude}`);
+
+        // 发送确认消息给发送方
+        this.sendToClient(ws, {
+          type: SERVER_MESSAGE_TYPES.MESSAGE,
+          session_id: ws.sessionId,
+          status: 'success',
+          message: `设备 ${targetClientId} 配置已更新`,
+          data: {
+            targetClientId,
+            audioThresholds: targetDevice.connection.audioThresholds
+          },
+          timestamp: new Date().toISOString()
+        });
       } else if (messageType === 'mcp') {
         //Tool Trans
         let toolApi = messageData.name;
@@ -1362,23 +1403,21 @@ class WebSocketHandler {
       return;
     }
 
-    logger.info(`🎤 开始语音识别，音频帧数: ${audioBuffer.length}`);
-
     // ========== 调试：保存音频到文件 ==========
     let wavBufferForVoiceprint = null;
     try {
       const timestamp = Date.now();
-      const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
-      if (!fs.existsSync(debugDir)) {
-        fs.mkdirSync(debugDir, { recursive: true });
-      }
+      // const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
+      // if (!fs.existsSync(debugDir)) {
+      //   fs.mkdirSync(debugDir, { recursive: true });
+      // }
 
       // 合并所有 Opus 帧
       const combinedOpus = Buffer.concat(audioBuffer);
 
       // 保存原始 Opus 数据
-      const opusFile = path.join(debugDir, `audio-${timestamp}.opus`);
-      fs.writeFileSync(opusFile, combinedOpus);
+      // const opusFile = path.join(debugDir, `audio-${timestamp}.opus`);
+      // fs.writeFileSync(opusFile, combinedOpus);
       // logger.info(`💾 已保存 Opus 音频: ${opusFile} (${combinedOpus.length} bytes)`);
 
       // ========== 自动检测音频格式 ==========
@@ -1399,23 +1438,26 @@ class WebSocketHandler {
         }
       }
 
+
+      let detectedFormat = 'pcm';
+      let pcmData = null;
+
       // 如果大帧占多数（超过30%），认为是 PCM 格式
       const totalFrames = largeFrameCount + smallFrameCount;
       const largeFrameRatio = totalFrames > 0 ? largeFrameCount / totalFrames : 0;
       const avgLargeFrameSize = largeFrameCount > 0 ? largeFrameTotalSize / largeFrameCount : 0;
 
-      let detectedFormat = 'pcm';
-      let pcmData = null;
+
 
       if (largeFrameRatio > 0.3 && avgLargeFrameSize > 1000) {
         detectedFormat = 'pcm';
-        logger.info(`🔍 检测到 PCM 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 大帧平均: ${avgLargeFrameSize.toFixed(0)} bytes)`);
+        // logger.info(`🔍 检测到 PCM 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 大帧平均: ${avgLargeFrameSize.toFixed(0)} bytes)`);
         // 只使用大帧作为 PCM 数据
         const largeFrames = audioBuffer.filter(f => f && f.length > 500);
         pcmData = Buffer.concat(largeFrames);
       } else {
         detectedFormat = 'opus';
-        logger.info(`🔍 检测到 Opus 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 小帧: ${smallFrameCount}, 大帧: ${largeFrameCount})`);
+        // logger.info(`🔍 检测到 Opus 格式 (大帧比例: ${(largeFrameRatio * 100).toFixed(0)}%, 小帧: ${smallFrameCount}, 大帧: ${largeFrameCount})`);
       }
       // ========== 格式检测结束 ==========
 
@@ -1437,7 +1479,19 @@ class WebSocketHandler {
         }
 
         if (combinedPcm && combinedPcm.length > 0) {
+          // 检查音频数据是否有效（非静音）
+          // 使用设备特定阈值或默认阈值
+          const thresholds = ws.audioThresholds || this.defaultAudioThresholds;
+          const audioStats = this._analyzeAudioAmplitude(combinedPcm, thresholds);
+          logger.info(`📊 音频振幅分析: 最大=${audioStats.maxAmplitude}, 平均=${audioStats.avgAmplitude.toFixed(2)}, 有效=${audioStats.isValid} (阈值: max=${thresholds.minMaxAmplitude}, avg=${thresholds.minAvgAmplitude})`);
+
+          if (!audioStats.isValid) {
+            logger.warn(`⚠️ 音频数据无效（静音或振幅过低），跳过识别`);
+            return;
+          }
+
           // 创建 WAV 文件头
+          const debugDir = path.join(process.cwd(), 'data', 'debug-audio');
           wavBufferForVoiceprint = this._createWavBuffer(combinedPcm, 16000, 1, 16);
           const wavFile = path.join(debugDir, `audio-${timestamp}.wav`);
           fs.writeFileSync(wavFile, wavBufferForVoiceprint);
@@ -1820,6 +1874,45 @@ class WebSocketHandler {
         await this._startToChat(ws, endPrompt);
       }
     }
+  }
+
+  /**
+   * 分析音频振幅，判断是否有效音频
+   * @param {Buffer} pcmData - PCM 音频数据 (16-bit signed)
+   * @param {Object} thresholds - 阈值配置 { minMaxAmplitude, minAvgAmplitude }
+   * @returns {Object} 振幅统计信息 { maxAmplitude, avgAmplitude, isValid }
+   */
+  _analyzeAudioAmplitude(pcmData, thresholds = {}) {
+    // 使用传入的阈值或默认值
+    const MIN_MAX_AMPLITUDE = thresholds.minMaxAmplitude || 500;
+    const MIN_AVG_AMPLITUDE = thresholds.minAvgAmplitude || 50;
+
+    const samples = Math.floor(pcmData.length / 2); // 16-bit = 2 bytes per sample
+
+    if (samples === 0) {
+      return { maxAmplitude: 0, avgAmplitude: 0, isValid: false };
+    }
+
+    let maxAmplitude = 0;
+    let sumAmplitude = 0;
+
+    // 采样分析（每隔一定间隔采样，提高效率）
+    const sampleStep = Math.max(1, Math.floor(samples / 1000));
+    let sampledCount = 0;
+
+    for (let i = 0; i < samples; i += sampleStep) {
+      const amplitude = Math.abs(pcmData.readInt16LE(i * 2));
+      maxAmplitude = Math.max(maxAmplitude, amplitude);
+      sumAmplitude += amplitude;
+      sampledCount++;
+    }
+
+    const avgAmplitude = sampledCount > 0 ? sumAmplitude / sampledCount : 0;
+
+    // 判断是否有效：最大振幅或平均振幅超过阈值
+    const isValid = maxAmplitude >= MIN_MAX_AMPLITUDE || avgAmplitude >= MIN_AVG_AMPLITUDE;
+
+    return { maxAmplitude, avgAmplitude, isValid };
   }
 
   /**
