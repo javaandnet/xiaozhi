@@ -64,7 +64,9 @@ class OTAHandler {
     if (websocketConfig && websocketConfig !== '' && !websocketConfig.includes('你的')) {
       return websocketConfig;
     } else {
-      return `ws://${localIp}:${port}/xiaozhi/v1/`;
+      // 根据服务端是否启用HTTPS决定协议
+      const protocol = serverConfig.use_https ? 'wss' : 'ws';
+      return `${protocol}://${localIp}:${port}/xiaozhi/v1/`;
     }
   }
 

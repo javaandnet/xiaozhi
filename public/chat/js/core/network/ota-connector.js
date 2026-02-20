@@ -24,6 +24,25 @@ export async function webSocketConnect(otaUrl, config) {
     // 使用OTA返回的websocket URL
     let connUrl = new URL(websocket.url);
 
+    // 使用当前页面的host替换OTA返回的host，确保证书匹配
+    // 例如：如果页面是 https://localhost:8003，则使用 localhost 而不是 IP
+    const pageHost = window.location.host; // 包含端口号
+    const pageProtocol = window.location.protocol; // http: 或 https:
+    
+    // 替换host为当前页面的host
+    connUrl.host = pageHost;
+    
+    // 根据当前页面协议自动调整 WebSocket 协议
+    // 如果页面是 https，则使用 wss；如果是 http，则使用 ws
+    const isSecurePage = pageProtocol === 'https:';
+    if (isSecurePage) {
+        connUrl.protocol = 'wss:';
+        log(`页面使用HTTPS，WebSocket使用wss协议，主机: ${pageHost}`, 'info');
+    } else {
+        connUrl.protocol = 'ws:';
+        log(`页面使用HTTP，WebSocket使用ws协议，主机: ${pageHost}`, 'info');
+    }
+
     // 添加token参数（从OTA响应中获取）
     if (websocket.token) {
         if (websocket.token.startsWith("Bearer ")) {

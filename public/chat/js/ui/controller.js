@@ -61,7 +61,87 @@ class UIController {
 
         this.updateDialButton(false);
 
+        // 页面初始化时请求麦克风权限
+        this.requestMicrophonePermission();
+
         console.log('UIController init completed');
+    }
+
+    /**
+     * 请求麦克风权限（页面初始化时）
+     * 所有设备都在初始化时请求，提前获取用户授权
+     */
+    async requestMicrophonePermission() {
+        // 检查是否支持 getUserMedia
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            console.warn('浏览器不支持 getUserMedia API');
+            window.microphoneAvailable = false;
+            return;
+        }
+
+        console.log('正在请求麦克风权限...');
+
+        try {
+            // 请求麦克风权限
+            const audioStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    sampleRate: 16000,
+                    channelCount: 1
+                }
+            });
+
+            // 立即停止媒体流，释放麦克风（只是获取权限）
+            audioStream.getTracks().forEach(track => track.stop());
+
+            console.log('✅ 麦克风权限请求成功');
+            window.microphoneAvailable = true;
+
+            // 更新录音按钮状态
+            this.updateRecordButtonAvailability(true);
+
+        } catch (error) {
+            console.warn('❌ 麦克风权限请求失败:', error.message);
+            window.microphoneAvailable = false;
+
+            // 根据错误类型显示不同提示
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                console.warn('用户拒绝了麦克风权限');
+            } else if (error.name === 'NotFoundError') {
+                console.warn('未找到麦克风设备');
+            }
+
+            // 更新录音按钮状态
+            this.updateRecordButtonAvailability(false);
+        }
+    }
+
+    /**
+     * 更新录音按钮可用性
+     */
+    updateRecordButtonAvailability(available) {
+        const recordBtn = document.getElementById('recordBtn');
+        const testRecordBtn = document.getElementById('testRecordBtn');
+
+        if (testRecordBtn) {
+            if (available) {
+                testRecordBtn.disabled = false;
+                testRecordBtn.title = '测试录音（本地）';
+            } else {
+                testRecordBtn.disabled = true;
+                testRecordBtn.title = '麦克风不可用';
+            }
+        }
+
+        // 正常录音按钮需要连接服务器后才能使用
+        if (recordBtn && available) {
+            const isConnected = window.wsConnected || false;
+            if (isConnected) {
+                recordBtn.disabled = false;
+                recordBtn.title = '开始录音';
+            }
+        }
     }
 
     /**
@@ -256,6 +336,7 @@ class UIController {
                 }
                 recordTimer = setTimeout(() => {
                     const audioRecorder = getAudioRecorder();
+                    audioRecorder.setTestMode(false); // 正常模式
                     if (audioRecorder.isRecording) {
                         audioRecorder.stop();
                         // Restore record button to normal state
@@ -269,6 +350,54 @@ class UIController {
                         // Start recording, update button state after delay
                         setTimeout(() => {
                             audioRecorder.start();
+                        }, 100);
+                    }
+                }, 300);
+            });
+        }
+
+        // Test Record button - 本地测试录音
+        const testRecordBtn = document.getElementById('testRecordBtn');
+        if (testRecordBtn) {
+            let testRecordTimer = null;
+            testRecordBtn.addEventListener('click', () => {
+                if (testRecordTimer) {
+                    clearTimeout(testRecordTimer);
+                    testRecordTimer = null;
+                }
+                testRecordTimer = setTimeout(() => {
+                    const audioRecorder = getAudioRecorder();
+                    audioRecorder.setTestMode(true); // 测试模式
+
+                    if (audioRecorder.isRecording) {
+                        // 停止录音并显示统计
+                        audioRecorder.stop();
+                        testRecordBtn.classList.remove('recording');
+                        testRecordBtn.title = '测试录音（本地）';
+
+                        // 显示统计和选项
+                        setTimeout(() => {
+                            const stats = audioRecorder.getFormattedStats();
+                            console.log(stats);
+
+                            // 创建自定义弹窗
+                            this.showRecordingResultModal(audioRecorder, stats);
+                        }, 200);
+                    } else {
+                        // 开始测试录音
+                        testRecordBtn.classList.add('recording');
+                        testRecordBtn.title = '停止测试录音';
+
+                        setTimeout(() => {
+                            audioRecorder.start().then(success => {
+                                if (success) {
+                                    console.log('🎤 测试录音已开始，请说话...');
+                                } else {
+                                    testRecordBtn.classList.remove('recording');
+                                    testRecordBtn.title = '测试录音（本地）';
+                                    alert('录音启动失败，请检查麦克风权限');
+                                }
+                            });
                         }, 100);
                     }
                 }, 300);
@@ -567,13 +696,7 @@ class UIController {
                 this.addChatMessage('⚠️ 麦克风不可用，请检查权限设置，只能用文字交互', false);
             }
         }
-        // Start recording only if microphone is available
-        if (window.microphoneAvailable) {
-            const recordBtn = document.getElementById('recordBtn');
-            if (recordBtn) {
-                recordBtn.click();
-            }
-        }
+        // 不再自动开始录音，让用户手动点击录音按钮
         // Start camera only if camera is available (bound with verification code)
         if (window.cameraAvailable && typeof window.startCamera === 'function') {
             window.startCamera().then(success => {
@@ -802,6 +925,123 @@ class UIController {
     updateSessionEmotion(emoji) {
         // Here can add emotion update logic
         // For example: display emoji in status indicator
+    }
+
+    // 显示录音结果弹窗
+    showRecordingResultModal(audioRecorder, statsText) {
+        // 移除已存在的弹窗
+        const existingModal = document.getElementById('recordingResultModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // 创建弹窗
+        const modal = document.createElement('div');
+        modal.id = 'recordingResultModal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: #2f3136;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+            color: #fff;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        `;
+
+        content.innerHTML = `
+            <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #00d4aa;">🎤 录音测试结果</h3>
+            <pre style="background: #1a1a1a; padding: 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; margin: 0 0 16px 0; color: #ddd;">${statsText}</pre>
+            <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                <button id="playRecordingBtn" style="
+                    background: #5865f2;
+                    border: none;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                ">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+                    </svg>
+                    播放录音
+                </button>
+                <button id="downloadRecordingBtn" style="
+                    background: #00d4aa;
+                    border: none;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                ">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" />
+                    </svg>
+                    下载 WAV
+                </button>
+                <button id="closeRecordingModalBtn" style="
+                    background: #4f545c;
+                    border: none;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 14px;
+                ">
+                    关闭
+                </button>
+            </div>
+        `;
+
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+
+        // 播放按钮
+        content.querySelector('#playRecordingBtn').addEventListener('click', async () => {
+            const success = await audioRecorder.playRecording();
+            if (!success) {
+                alert('播放失败，请重新录音');
+            }
+        });
+
+        // 下载按钮
+        content.querySelector('#downloadRecordingBtn').addEventListener('click', () => {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            audioRecorder.downloadRecording(`recording-${timestamp}.wav`);
+        });
+
+        // 关闭按钮
+        content.querySelector('#closeRecordingModalBtn').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
     }
 }
 

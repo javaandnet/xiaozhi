@@ -1,9 +1,16 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
+import fs from 'fs';
 import http from 'http';
+import https from 'https';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import OTAHandler from './core/handlers/ota.js';
 import { handleWebSocketConnection, initializeWebSocketHandler } from './core/handlers/websocket.js';
@@ -21,10 +28,35 @@ import TTSService from './core/services/tts.js';
 import VoiceprintService from './core/services/voiceprint.js';
 
 const app = express();
-const server = http.createServer(app);
+
+// HTTPS配置
+const USE_HTTPS = process.env.USE_HTTPS === 'true';
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH || path.join(__dirname, 'certs', 'key.pem');
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH || path.join(__dirname, 'certs', 'cert.pem');
+
+// 创建HTTP或HTTPS服务器
+let server;
+if (USE_HTTPS) {
+  try {
+    const sslOptions = {
+      key: fs.readFileSync(SSL_KEY_PATH),
+      cert: fs.readFileSync(SSL_CERT_PATH)
+    };
+    server = https.createServer(sslOptions, app);
+    console.log('🔒 HTTPS模式已启用');
+  } catch (error) {
+    console.error('❌ SSL证书加载失败，回退到HTTP模式:', error.message);
+    server = http.createServer(app);
+  }
+} else {
+  server = http.createServer(app);
+}
+
 const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 8000;
+const PROTOCOL = USE_HTTPS ? 'https' : 'http';
+const WS_PROTOCOL = USE_HTTPS ? 'wss' : 'ws';
 
 // 直接使用配置文件中的值，环境变量作为覆盖
 const config = {
@@ -33,7 +65,8 @@ const config = {
     http_port: PORT,
     host: process.env.HOST || '0.0.0.0',
     environment: process.env.NODE_ENV || 'development',
-    auth_key: process.env.AUTH_KEY || 'xiaozhi-auth-secret-key'
+    auth_key: process.env.AUTH_KEY || 'xiaozhi-auth-secret-key',
+    use_https: USE_HTTPS
   },
   services: {
     llm: {
@@ -201,7 +234,7 @@ app.get('/api', (req, res) => {
     endpoints: {
       devices: '/api/devices',
       sensors: '/api/sensors',
-      websocket: 'ws://localhost:' + PORT,
+      websocket: 'wss://localhost:' + PORT,
       ota: '/xiaozhi/ota/',
       health: '/health',
       chat: '/chat',
@@ -241,8 +274,8 @@ app.use('*', (req, res) => {
 // 启动服务器
 server.listen(PORT, () => {
   logger.info(`小智服务器启动成功，监听端口 ${PORT}`);
-  logger.info(`WebSocket服务器运行在 ws://localhost:${PORT}`);
-  logger.info(`HTTP服务器运行在 http://localhost:${PORT}`);
+  logger.info(`WebSocket服务器运行在 ${WS_PROTOCOL}://localhost:${PORT}`);
+  logger.info(`${USE_HTTPS ? 'HTTPS' : 'HTTP'}服务器运行在 ${PROTOCOL}://localhost:${PORT}`);
 });
 
 // 优雅关闭

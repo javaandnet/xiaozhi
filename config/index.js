@@ -32,7 +32,10 @@ module.exports = {
     sampleRate: 16000,
     channels: 1,
     frameDuration: 60,
-    bitRate: 24000
+    bitRate: 24000,
+    // 音频有效性检测阈值
+    minMaxAmplitude: parseInt(process.env.AUDIO_MIN_MAX_AMPLITUDE) || 500,  // 最大振幅阈值
+    minAvgAmplitude: parseInt(process.env.AUDIO_MIN_AVG_AMPLITUDE) || 50     // 平均振幅阈值
   },
 
   // 会话配置
