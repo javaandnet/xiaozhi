@@ -4,7 +4,7 @@
  */
 
 import CryptoJS from 'crypto-js';
-import SocketClient from '../utils/socket.js';
+import SocketClient from '../socket.js';
 
 // MD5 加密函数
 function md5(text) {

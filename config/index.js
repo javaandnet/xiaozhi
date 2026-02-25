@@ -141,7 +141,16 @@ module.exports = {
       api_key: process.env.LLM_API_KEY || '60284c17c64043f290fab4b0ce20ec1c.2ocJCaVIXzpGbch3',
       base_url: process.env.LLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
       temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.7,
-      max_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 500
+      max_tokens: parseInt(process.env.LLM_MAX_TOKENS) || 500,
+
+      // Socket 客户端配置（用于与外部 Socket 服务通信）
+      socket: {
+        url: process.env.LLM_SOCKET_URL || 'http://localhost:8379',
+        credentials: {
+          username: process.env.LLM_SOCKET_USERNAME || 'fsr',
+          password: process.env.LLM_SOCKET_PASSWORD || 'qqq111'
+        }
+      }
     },
 
     // VAD配置

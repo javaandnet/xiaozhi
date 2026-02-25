@@ -10121,3 +10121,43 @@
 {"timestamp": "2026-02-25 22:15:08", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
 {"timestamp": "2026-02-25 22:15:08", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "870738e9-703a-453a-b720-0183f88b0b3a", "status_code": 200, "duration_ms": 879.3}
 {"timestamp": "2026-02-25 22:15:08", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:60368 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:16", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "6ab4e1b9-b05e-4120-819c-3f8f0c159145", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:16", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "674fcc18-73a5-46fe-a972-0ea249fb7828", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "674fcc18-73a5-46fe-a972-0ea249fb7828", "status_code": 200, "duration_ms": 1571.54}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58597 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "3926a95f-8cd2-4125-9e2d-020c97f493da", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "6ab4e1b9-b05e-4120-819c-3f8f0c159145", "status_code": 200, "duration_ms": 1584.13}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58595 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:17", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "c066c5a3-b55f-45ef-b8e9-5b466997439e", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "3926a95f-8cd2-4125-9e2d-020c97f493da", "status_code": 200, "duration_ms": 895.79}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58627 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "c066c5a3-b55f-45ef-b8e9-5b466997439e", "status_code": 200, "duration_ms": 882.9}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58597 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "763ca5f0-b14f-4abf-8cbf-8735ce519700", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:18", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "40025d9f-bf9c-4cc0-9297-684822cb12c1", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "40025d9f-bf9c-4cc0-9297-684822cb12c1", "status_code": 200, "duration_ms": 1100.03}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58637 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "763ca5f0-b14f-4abf-8cbf-8735ce519700", "status_code": 200, "duration_ms": 1104.62}
+{"timestamp": "2026-02-26 00:15:19", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58595 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:22", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "5e1dcb2a-edcf-43e3-8c91-23fe43f2c30b", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:22", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search", "request_id": "0f543a02-f524-4006-8fbd-6a5a4454c774", "method": "POST", "path": "/api/v1/memories/search", "client": "127.0.0.1"}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "server", "message": "SearchService initialized"}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "server", "message": "Search completed: 0 results"}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "5e1dcb2a-edcf-43e3-8c91-23fe43f2c30b", "status_code": 200, "duration_ms": 999.88}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58595 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "server", "message": "POST /api/v1/memories/search - 200", "request_id": "0f543a02-f524-4006-8fbd-6a5a4454c774", "status_code": 200, "duration_ms": 835.9}
+{"timestamp": "2026-02-26 00:15:23", "level": "INFO", "logger": "uvicorn.access", "message": "127.0.0.1:58672 - \"POST /api/v1/memories/search HTTP/1.1\" 200"}

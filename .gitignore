@@ -46,3 +46,4 @@ public/chat/resources/**
 voiceprint-api-main/**
 powermem/data/powermem.db
 powermem/logs/audit.log
+powermem/server.log

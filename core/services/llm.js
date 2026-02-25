@@ -1,6 +1,6 @@
 import { logger } from '../../utils/logger.js';
-import BaseService from './base.js';
 import SocketClient from '../utils/socket.js';
+import BaseService from './base.js';
 
 class LlmService extends BaseService {
   constructor(config = {}) {
