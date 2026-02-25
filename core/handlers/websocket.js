@@ -1390,12 +1390,17 @@ class WebSocketHandler {
     // 获取缓存的音频数据
     const audioBuffer = session.audioBuffer || [];
 
-    // 清空缓冲区
+    // 清空缓冲区并重置状态
     session.audioBuffer = [];
     session.voiceStop = false;
+    
+    // 标记正在处理，防止 receiveAudio 中重复触发
+    session.isProcessing = true;
+    
     // logger.info(`📦 音频缓冲区帧数: ${audioBuffer.length}`);
     if (audioBuffer.length < 15) {
       logger.debug(`音频数据不足，跳过识别: ${audioBuffer.length} 帧`);
+      session.isProcessing = false;
       return;
     }
 
@@ -1415,6 +1420,7 @@ class WebSocketHandler {
         logger.info(`📊 音频振幅分析: 最大=${audioStats.maxAmplitude}, 平均=${audioStats.avgAmplitude.toFixed(2)}, 有效=${audioStats.isValid} (阈值: max=${thresholds.minMaxAmplitude}, avg=${thresholds.minAvgAmplitude})`);
         if (!audioStats.isValid) {
           logger.warn(`⚠️ 音频数据无效（静音或振幅过低），跳过识别`);
+          session.isProcessing = false;
           return;
         }
 
@@ -1429,14 +1435,19 @@ class WebSocketHandler {
         logger.info(`🎤 使用 PCM 数据直接调用 FunASR 识别...`);
         const result = await this.sttService._recognizeWithFunAsr(combinedPcm, sessionId);
         logger.info(`✅ 识别结果: ${JSON.stringify(result)}`);
-        if (this.sttService.onResult && result.text) {
-          this.sttService.onResult(sessionId, result);
+        
+        // 处理识别结果并触发后续流程
+        if (result.text) {
+          await this._handleSttResultDirectly(ws, sessionId, result);
         }
+        
+        session.isProcessing = false;
         return; // 直接返回，不再调用后面的识别
       }
     } catch (decodeError) {
       logger.warn(`解码音频失败: ${decodeError.message}`);
       logger.error(decodeError.stack);
+      session.isProcessing = false;
     }
 
 
@@ -1444,8 +1455,13 @@ class WebSocketHandler {
       // 并发执行 STT 识别和声纹识别
       const tasks = [];
 
-      // STT 识别任务
-      tasks.push(this.sttService._handleVoiceStop(session, audioBuffer));
+      // STT 识别任务 - 使用内部方法，不触发回调
+      tasks.push(this.sttService._recognizePcm(combinedPcm, sessionId).then(result => {
+        if (result && result.text) {
+          return this._handleSttResultDirectly(ws, sessionId, result);
+        }
+        return null;
+      }));
 
       // 声纹识别任务（如果有 WAV 数据且声纹服务可用）
       if (wavBufferForVoiceprint && this.voiceprintService && this.voiceprintService.isEnabled()) {
@@ -1470,21 +1486,19 @@ class WebSocketHandler {
     } catch (error) {
       logger.error(`❌ 语音识别失败: ${error.message}`);
       this.sendError(ws, `语音识别失败: ${error.message}`, sessionId);
+    } finally {
+      session.isProcessing = false;
     }
   }
 
   /**
-   * 处理STT识别结果回调
+   * 直接处理STT识别结果（不通过回调）
+   * 避免与 receiveAudio 中的自动触发重复
+   * @param {WebSocket} ws - WebSocket连接
    * @param {string} sessionId - 会话ID
    * @param {Object} result - 识别结果
    */
-  async _handleSttResult(sessionId, result) {
-    const ws = this._getWsBySessionId(sessionId);
-    if (!ws) {
-      logger.warn(`找不到会话对应的WebSocket连接: ${sessionId}`);
-      return;
-    }
-
+  async _handleSttResultDirectly(ws, sessionId, result) {
     const { text, confidence, provider } = result;
 
     // 发送STT识别结果消息
@@ -1499,6 +1513,28 @@ class WebSocketHandler {
 
     // 开始聊天流程
     await this._startToChat(ws, text);
+  }
+
+  /**
+   * 处理STT识别结果回调
+   * @param {string} sessionId - 会话ID
+   * @param {Object} result - 识别结果
+   */
+  async _handleSttResult(sessionId, result) {
+    const ws = this._getWsBySessionId(sessionId);
+    if (!ws) {
+      logger.warn(`找不到会话对应的WebSocket连接: ${sessionId}`);
+      return;
+    }
+
+    // 检查是否已经在处理中（防止重复处理）
+    const session = this.sttService.getSession(sessionId);
+    if (session && session.isProcessing) {
+      logger.debug(`会话正在处理中，跳过回调: ${sessionId}`);
+      return;
+    }
+
+    await this._handleSttResultDirectly(ws, sessionId, result);
   }
 
   /**

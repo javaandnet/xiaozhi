@@ -289,7 +289,7 @@ class SttService extends BaseService {
     }
 
     // 自动模式：检测语音停止
-    if (session.listenMode === 'auto' && session.voiceStop) {
+    if (session.listenMode === 'auto' && session.voiceStop && !session.isProcessing) {
       const audioTask = session.audioBuffer.slice();
       session.audioBuffer = [];
       session.voiceStop = false;
