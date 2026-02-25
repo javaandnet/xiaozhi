@@ -70,6 +70,8 @@ const config = {
   },
   services: {
     llm: {
+      uri: process.env.LLM_URI || 'ws://localhost:8379',
+      timeout: parseInt(process.env.LLM_TIMEOUT) || 10000,
       provider: process.env.LLM_PROVIDER || 'glm',
       model: process.env.LLM_MODEL || 'glm-4-flash',
       api_key: process.env.LLM_API_KEY || '60284c17c64043f290fab4b0ce20ec1c.2ocJCaVIXzpGbch3',

@@ -642,10 +642,10 @@ class WebSocketHandler {
     let connectionId = ws.clientId;
     if (this.llmService && this.llmService.isConfigured()) {
       // 构造输入文本
-      const inputText = includePersona
+      let inputText = includePersona
         ? `${this.getPersonaPrompt()}\n\n请不要生成表情。\n\n用户说: ${text}`
         : text;
-
+      inputText = text;
       try {
         const response = await this.llmService.chat(connectionId, inputText);
         console.log(`LLM回复生成成功: ${response.substring(0, 50)}...`);
@@ -1374,7 +1374,7 @@ class WebSocketHandler {
    * @param {string} sessionId - 会话ID
    */
   async _triggerSttRecognition(ws, sessionId) {
-    logger.info(`🎬 开始触发语音识别: ${sessionId}`);
+    // logger.info(`🎬 开始触发语音识别: ${sessionId}`);
 
     if (!this.sttService) {
       logger.warn(`STT服务未初始化`);
@@ -1393,7 +1393,7 @@ class WebSocketHandler {
     // 清空缓冲区
     session.audioBuffer = [];
     session.voiceStop = false;
-    logger.info(`📦 音频缓冲区帧数: ${audioBuffer.length}`);
+    // logger.info(`📦 音频缓冲区帧数: ${audioBuffer.length}`);
     if (audioBuffer.length < 15) {
       logger.debug(`音频数据不足，跳过识别: ${audioBuffer.length} 帧`);
       return;
