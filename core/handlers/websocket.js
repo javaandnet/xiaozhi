@@ -8,6 +8,7 @@ import {
   TTS_STATES
 } from '../constants/messageTypes.js';
 import DeviceManager from '../managers/device.js';
+import { getQuestManager } from '../managers/quest.js';
 import McpService from '../services/mcp.js';
 import audioConverter from '../utils/audioConverter.js';
 
@@ -30,6 +31,7 @@ class WebSocketHandler {
     this.vadService = options.vadService;
     this.mcpService = options.mcpService || new McpService();
     this.voiceprintService = options.voiceprintService;
+    this.questManager = options.questManager || getQuestManager();
 
     // 音频有效性检测默认阈值（可被设备设置覆盖）
     this.defaultAudioThresholds = {
@@ -202,7 +204,7 @@ class WebSocketHandler {
     }
 
     const { type, sessionId, ...payload } = message;
-
+    console.log(`收到消息类型: ${type}, sessionId: ${sessionId}`);
     // 更新会话ID
     if (sessionId) {
       ws.sessionId = sessionId;
@@ -342,7 +344,7 @@ class WebSocketHandler {
         const silenceDuration = now - (ws.lastVoiceTime || now);
         // logger.info(`检测到静默: ${silenceDuration}ms (阈值: ${SILENCE_THRESHOLD_MS}ms)`);
         if (silenceDuration >= SILENCE_THRESHOLD_MS) {
-          logger.info(`✅ 检测到语音停止，静默时间: ${silenceDuration}ms，触发识别`);
+          // logger.info(`✅ 检测到语音停止，静默时间: ${silenceDuration}ms，触发识别`);
           ws.clientVoiceStop = true;
         }
       }
@@ -531,9 +533,9 @@ class WebSocketHandler {
         break;
 
       case CLIENT_MESSAGE_TYPES.CHAT:
-        const { text: chatText, state: chatState } = payload;
+        const { text: chatText, state: chatState, questId: chatQuestId, closeQuest } = payload;
         if (chatState === CHAT_STATES.COMPLETE && chatText) {
-          console.log(`收到聊天消息 [${ws.clientId}]: ${chatText}`);
+          console.log(`收到聊天消息 [${ws.clientId}]: ${chatText}, questId=${chatQuestId}`);
           // 转发用户消息给客户端显示
           this.sendMessage(ws, {
             type: SERVER_MESSAGE_TYPES.STT,
@@ -541,8 +543,17 @@ class WebSocketHandler {
             text: chatText,
             timestamp: new Date().toISOString()
           });
+
+          // 如果请求关闭当前Quest
+          let effectiveQuestId = chatQuestId;
+          if (closeQuest) {
+            this.questManager.closeActiveQuest(ws.clientId);
+            effectiveQuestId = null; // 强制创建新Quest
+            logger.info(`请求关闭当前Quest，将创建新Quest`);
+          }
+
           // 处理完整的聊天消息
-          this.handleCompleteChatMessage(ws, chatText);
+          this.handleCompleteChatMessage(ws, chatText, effectiveQuestId);
         }
         break;
       case CLIENT_MESSAGE_TYPES.MCP:
@@ -555,24 +566,61 @@ class WebSocketHandler {
    * 处理完整的聊天消息 - 核心语音对话流程
    * @param {WebSocket} ws - WebSocket连接
    * @param {string} text - 用户输入文本
+   * @param {string} questId - 可选的Quest ID
    */
-  async handleCompleteChatMessage(ws, text) {
+  async handleCompleteChatMessage(ws, text, questId = null) {
     const sessionId = ws.sessionId;
     const connectionId = ws.clientId;
-
+    let DEBUG = false;
     try {
       console.log(`开始处理聊天消息 [${connectionId}]: ${text}`);
 
+      // ==================== Quest管理 ====================
+      // 获取或创建活跃Quest
+      let quest = null;
+      if (questId) {
+        // 如果指定了questId，尝试获取该Quest
+        quest = this.questManager.getQuest(questId);
+        if (quest && quest.isClosed()) {
+          // Quest已关闭，创建新的
+          quest = null;
+          logger.info(`指定的Quest已关闭，将创建新Quest: ${questId}`);
+        }
+      }
 
-      // 2. 调用LLM生成回复
-      const llmResponse = await this.generateLlmResponse(ws, text);
+      if (!quest) {
+        // 没有指定questId或Quest已关闭，获取或创建活跃Quest
+        quest = this.questManager.getOrCreateActiveQuest(connectionId, {
+          sessionId,
+          deviceId: ws.deviceId
+        });
+        questId = quest.questId;
+        logger.info(`使用Quest: ${questId} (状态: ${quest.status})`);
+      }
 
-      // 3. 发送LLM回复消息
-      this.sendLlmResponse(ws, sessionId, llmResponse);
+      // 增加消息计数
+      quest.incrementMessageCount();
+      // ==================== Quest管理结束 ====================
 
-      // 4. 调用TTS合成并发送音频
-      await this.sendTtsAudio(ws, sessionId, llmResponse);
+      if (DEBUG) {
+        // 发送LLM消息
+        this.sendMessage(ws, {
+          type: SERVER_MESSAGE_TYPES.LLM,
+          session_id: sessionId,
+          state: TTS_STATES.SENTENCE_START,
+          text: text,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        // 调用LLM生成回复（使用questId管理对话历史）
+        const llmResponse = await this.generateLlmResponse(ws, text, questId);
 
+        // 发送LLM回复消息
+        this.sendLlmResponse(ws, sessionId, llmResponse);
+
+        // 调用TTS合成并发送音频
+        await this.sendTtsAudio(ws, sessionId, llmResponse);
+      }
       logger.info(`聊天消息处理完成 [${connectionId}]`);
 
     } catch (error) {
@@ -631,25 +679,32 @@ class WebSocketHandler {
 
   /**
    * 生成LLM回复
-   * @param {string} connectionId - 连接ID
+   * @param {WebSocket} ws - WebSocket连接
    * @param {string} text - 用户输入文本
-   * @param {boolean} includePersona - 是否包含人设提示词（默认true）
+   * @param {string} questId - Quest ID，用于管理对话历史
    * @returns {Promise<string>} LLM回复文本
    */
-  async generateLlmResponse(ws, text, includePersona = true) {
+  async generateLlmResponse(ws, text, questId = null) {
     // 构造默认回复
     const defaultResponse = `我听到了你说的"${text}"。有什么我可以帮助你的吗？`;
-    let connectionId = ws.clientId;
+    const connectionId = ws.clientId;
+
     if (this.llmService && this.llmService.isConfigured()) {
-      // 构造输入文本
-      let inputText = includePersona
-        ? `${this.getPersonaPrompt()}\n\n请不要生成表情。\n\n用户说: ${text}`
-        : text;
-      inputText = text;
       try {
-        const response = await this.llmService.chat(connectionId, inputText);
-        console.log(`LLM回复生成成功: ${response.substring(0, 50)}...`);
-        return response;
+        // 使用questId作为对话历史的key，如果没有questId则使用connectionId
+        const historyKey = questId || connectionId;
+        const response = await this.llmService.chat(historyKey, text);
+        // 检查LLM回复状态
+        if (response.status && response.status.toLowerCase() == CHAT_STATES.COMPLETED) {
+          response.text = "好的，我要休息了";
+          // 结束当前quest
+          if (questId) {
+            this.questManager.closeQuest(questId, '对话已完成');
+            console.log(`Quest已结束: ${questId}`);
+          }
+        }
+        console.log(`LLM回复生成成功 [quest=${questId}]: ${(response.text || "").substring(0, 50)}...`);
+        return response.text;
       } catch (llmError) {
         console.error(`LLM调用失败: ${llmError.message}`);
         return defaultResponse;
@@ -1393,10 +1448,10 @@ class WebSocketHandler {
     // 清空缓冲区并重置状态
     session.audioBuffer = [];
     session.voiceStop = false;
-    
+
     // 标记正在处理，防止 receiveAudio 中重复触发
     session.isProcessing = true;
-    
+
     // logger.info(`📦 音频缓冲区帧数: ${audioBuffer.length}`);
     if (audioBuffer.length < 15) {
       logger.debug(`音频数据不足，跳过识别: ${audioBuffer.length} 帧`);
@@ -1433,14 +1488,17 @@ class WebSocketHandler {
 
         // 如果是 PCM 格式，直接发送给 FunASR 识别
         logger.info(`🎤 使用 PCM 数据直接调用 FunASR 识别...`);
-        const result = await this.sttService._recognizeWithFunAsr(combinedPcm, sessionId);
-        logger.info(`✅ 识别结果: ${JSON.stringify(result)}`);
-        
+        let result = await this.sttService._recognizeWithFunAsr(combinedPcm, sessionId);
+        // if (result.parsed) {
+        //   result = result.parsed.text;
+        // }
+        logger.info(`✅ 识别结果: ${result}`);
+
         // 处理识别结果并触发后续流程
         if (result.text) {
           await this._handleSttResultDirectly(ws, sessionId, result);
         }
-        
+
         session.isProcessing = false;
         return; // 直接返回，不再调用后面的识别
       }
@@ -1500,19 +1558,21 @@ class WebSocketHandler {
    */
   async _handleSttResultDirectly(ws, sessionId, result) {
     const { text, confidence, provider } = result;
+    const connectionId = ws.clientId;
 
-    // 发送STT识别结果消息
-    this.sendMessage(ws, {
-      type: 'stt',
-      session_id: sessionId,
-      text: text,
-      confidence: confidence,
-      provider: provider,
-      timestamp: new Date().toISOString()
+    // ==================== Quest管理 ====================
+    // 获取或创建活跃Quest
+    const quest = this.questManager.getOrCreateActiveQuest(connectionId, {
+      sessionId,
+      deviceId: ws.deviceId
     });
+    const questId = quest.questId;
+    quest.incrementMessageCount();
+    logger.info(`使用Quest: ${questId} (消息数: ${quest.messageCount})`);
+    // ==================== Quest管理结束 ====================
 
-    // 开始聊天流程
-    await this._startToChat(ws, text);
+    // 开始聊天流程（传递questId用于LLM对话历史管理）
+    await this._startToChat(ws, text, questId);
   }
 
   /**
@@ -1570,22 +1630,47 @@ class WebSocketHandler {
    * 参照Python: startToChat
    * @param {WebSocket} ws - WebSocket连接
    * @param {string} text - 用户文本
+   * @param {string} questId - 可选的Quest ID
    */
-  async _startToChat(ws, text) {
+  async _startToChat(ws, text, questId = null) {
     // 解析JSON格式的输入（可能包含说话人信息）
     let speakerName = null;
     let languageTag = null;
     let actualText = text;
+    let parsedQuestId = questId;
 
     try {
       if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
         const data = JSON.parse(text);
-        if (data.speaker && data.content) {
-          speakerName = data.speaker;
-          languageTag = data.language;
+        if (data.content) {
           actualText = data.content;
+        }
+        if (data.speaker) {
+          speakerName = data.speaker;
           ws.currentSpeaker = speakerName;
+        }
+        if (data.language) {
+          languageTag = data.language;
           ws.currentLanguageTag = languageTag || 'zh';
+        }
+        // 发送STT识别结果消息
+        this.sendMessage(ws, {
+          type: 'stt',
+          session_id: sessionId,
+          text: actualText,
+          confidence: confidence,
+          provider: provider,
+          timestamp: new Date().toISOString()
+        });
+
+        // 支持从JSON中提取questId
+        if (data.questId) {
+          parsedQuestId = data.questId;
+        }
+        // 支持closeQuest标志（TODO）
+        if (data.closeQuest) {
+          this.questManager.closeActiveQuest(ws.clientId);
+          parsedQuestId = null; // 强制创建新Quest
         }
       }
     } catch (e) {
@@ -1615,7 +1700,7 @@ class WebSocketHandler {
     }
 
     // 处理完整的聊天消息
-    await this.handleCompleteChatMessage(ws, actualText);
+    await this.handleCompleteChatMessage(ws, actualText, parsedQuestId);
   }
 
   /**

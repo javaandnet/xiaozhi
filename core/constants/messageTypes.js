@@ -77,6 +77,7 @@ export const LISTEN_STATES = {
 export const CHAT_STATES = {
     COMPLETE: 'complete',     // 消息完整
     PROCESSING: 'processing', // 处理中
+    COMPLETED: 'completed',
 };
 
 // ==================== MCP消息类型 ====================

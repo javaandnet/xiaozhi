@@ -76,7 +76,7 @@ export class WebSocketHandler {
             // 连接确认消息，无需显示在聊天界面
             log(`连接已建立，客户端ID: ${message.clientId}`, 'info');
         } else if (message.type === 'hello') {
-            log(`服务器回应：${JSON.stringify(message, null, 2)}`, 'success');
+            // log(`服务器回应：${JSON.stringify(message, null, 2)}`, 'success');
             window.cameraAvailable = true;
             log('连接成功，摄像头已可用', 'success');
             uiController.updateDialButton(true);
@@ -245,7 +245,7 @@ export class WebSocketHandler {
                     }
                 }
             });
-            log(`客户端上报: ${replyMessage}`, 'info');
+            // log(`客户端上报: ${replyMessage}`, 'info');
             this.websocket.send(replyMessage);
             log(`回复MCP工具列表: ${tools.length} 个工具`, 'info');
 
@@ -504,14 +504,6 @@ export class WebSocketHandler {
 
             this.websocket.send(JSON.stringify(chatMessage));
             log(`发送聊天消息: ${text}`, 'info');
-
-            // 同时也发送listen消息以保持兼容性
-            const listenMessage = {
-                type: 'listen',
-                state: 'detect',
-                text: text
-            };
-            this.websocket.send(JSON.stringify(listenMessage));
 
             return true;
         } catch (error) {

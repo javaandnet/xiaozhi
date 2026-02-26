@@ -1,11 +1,12 @@
 import { logger } from '../../utils/logger.js';
+import Util from '../../utils/util.js';
 import SocketClient from '../utils/socket.js';
 import BaseService from './base.js';
 
 class LlmService extends BaseService {
   constructor(config = {}) {
     super('LLM', config);
-
+    this.util = new Util();
     // 优先使用config.services.llm配置（兼容llm-service.js的配置方式）
     this.llmConfig = config.services?.llm || {};
     // 配置参数 - 支持两种配置方式
@@ -66,19 +67,19 @@ class LlmService extends BaseService {
 
   /**
    * 聊天接口 - 生成AI回复
-   * @param {string} connectionId - 连接ID
+   * @param {string} questId - 连接ID
    * @param {string} message - 用户消息
    * @returns {Promise<Object>} AI回复对象
    */
-  async chat(connectionId, message) {
+  async chat(questId, message) {
     try {
       // 优先使用 Socket 通信
       if (this.socketClient && this.socketClient.isConnected) {
-        return await this.chatViaSocket(connectionId, message);
+        return await this.chatViaSocket(questId, message);
       }
 
       // 回退到 HTTP API
-      return await this.chatViaAPI(connectionId, message);
+      return await this.chatViaAPI(questId, message);
     } catch (error) {
       logger.error(`LLM调用失败: ${error.message}`);
       throw error;
@@ -87,13 +88,13 @@ class LlmService extends BaseService {
 
   /**
    * 通过 Socket 发送消息并获取回复
-   * @param {string} connectionId - 连接ID
+   * @param {string} questId - 连接ID
    * @param {string} message - 用户消息
    * @returns {Promise<Object>} AI回复对象
    */
-  async chatViaSocket(connectionId, message) {
+  async chatViaSocket(questId, message) {
     return new Promise((resolve, reject) => {
-      const questId = `llm-${connectionId}-${Date.now()}`;
+      // questId 与 connectionId 保持一致映射，便于服务端识别连接
       let resolved = false;
 
       // 设置超时
@@ -113,13 +114,18 @@ class LlmService extends BaseService {
           this.socketClient.setOnTaskError(null);
 
           // 保存对话历史
-          this.addToHistory(connectionId, 'user', message);
-          this.addToHistory(connectionId, 'assistant', data.result || data.text || '');
+          // this.addToHistory(questId, 'user', message);
+          // this.addToHistory(connectionId, 'assistant', data.result || data.text || '');
 
+          let response = data.info || data.result || data.text || '';
+          if (this.util.isObject(response)) {
+            response = this.handleCategoryData(response);
+          }
           resolve({
-            text: data.result || data.text || '',
-            rawText: data.result || data.text || '',
-            sessionId: connectionId,
+            status: response.status,
+            text: response,
+            rawText: response,
+            sessionId: questId,
             provider: 'socket',
             questId: data.questId
           });
@@ -166,14 +172,21 @@ class LlmService extends BaseService {
       this.addToHistory(connectionId, 'assistant', response);
 
       logger.info(`LLM生成回复: ${message.substring(0, 20)}... -> ${response.substring(0, 20)}...`);
+      let rtnText = response;
 
-      return {
-        text: response,
-        rawText: response,
+      let rtnObj = {
+        text: rtnText,
+        rawText: rtnText,
         sessionId: connectionId,
         provider: this.provider,
         model: this.model
       };
+      if (this.util.isObject(response)) {
+        rtnObj.text = response.text;
+        rtnObj.rawText = response.rawText;
+        rtnObj.status = response.status;
+      }
+      return rtnObj;
     } catch (error) {
       logger.error(`LLM调用失败: ${error.message}`);
       throw error;
@@ -388,6 +401,34 @@ class LlmService extends BaseService {
       model: this.model,
       configured: this.isConfigured()
     };
+  }
+
+  /**
+    * 处理category数据
+    * @param {object} info - 包含category和相关信息的数据
+    */
+  handleCategoryData(info) {
+    const { category } = info;
+    let rtn = "无信息";
+    if (category === "agent") {
+      // 处理助手切换
+      const agent = info.agent;
+      if (agent && agent.name) {
+        // 显示助手切换消息
+        return `已切换到助手: ${agent.name}`;
+      }
+    } else if (category === "status") {
+      // 处理状态信息
+      const status = info.status;
+      if (status) {
+        // 显示状态消息
+        return {
+          text: `状态切换到: ${status}`,
+          status: status
+        }
+      }
+    }
+    return rtn;
   }
 }
 
