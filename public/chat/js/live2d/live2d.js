@@ -486,7 +486,7 @@ class Live2DManager {
                 }
 
                 // 调试日志：输出嘴部参数
-                console.log(`[Live2D] 模型: ${this.currentModelName || 'unknown'}, 音量: ${average?.toFixed(0)}, OpenY: ${mouthOpenY.toFixed(3)}, Form: ${mouthForm.toFixed(3)}, Form2: ${mouthForm2.toFixed(3)}`);
+                //console.log(`[Live2D] 模型: ${this.currentModelName || 'unknown'}, 音量: ${average?.toFixed(0)}, OpenY: ${mouthOpenY.toFixed(3)}, Form: ${mouthForm.toFixed(3)}, Form2: ${mouthForm2.toFixed(3)}`);
             }
 
             // 设置嘴部开合参数
