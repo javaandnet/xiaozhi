@@ -66,6 +66,48 @@ class RagService extends BaseService {
   }
 
   /**
+   * 检测 Embedding 服务是否可用
+   * @param {string} baseUrl - 服务基础 URL
+   * @param {number} timeout - 超时时间（毫秒）
+   * @returns {Promise<{available: boolean, message: string}>}
+   */
+  async checkEmbeddingService(baseUrl, timeout = 5000) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      const response = await fetch(baseUrl, {
+        method: 'GET',
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      return {
+        available: true,
+        message: `Embedding 服务可用 (状态: ${response.status})`,
+        status: response.status
+      };
+    } catch (error) {
+      const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+      const message = error.name === 'AbortError'
+        ? `Embedding 服务连接超时 (${timeout}ms)`
+        : `Embedding 服务不可达: ${error.message}`;
+
+      if (isLocal) {
+        logger.warn(`本地 Embedding 服务未启动: ${baseUrl}`);
+        logger.warn('请确保本地 embedding 服务已启动，或修改配置使用远程服务');
+      }
+
+      return {
+        available: false,
+        message,
+        error: error.message
+      };
+    }
+  }
+
+  /**
    * 生成文本向量
    * @param {string} text - 输入文本
    * @returns {Promise<number[]>} 向量数组
@@ -80,6 +122,16 @@ class RagService extends BaseService {
       // 支持自定义 base_url（如自己的 agent 服务）
       const baseUrl = this.embeddingConfig.baseUrl || 'https://api.openai.com/v1';
       const url = `${baseUrl}/embeddings`;
+
+      // 检测本地服务是否启动
+      const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+      if (isLocal) {
+        const checkResult = await this.checkEmbeddingService(baseUrl);
+        if (!checkResult.available) {
+          throw new Error(`本地 Embedding 服务未启动: ${baseUrl}\n${checkResult.message}\n请先启动本地 embedding 服务，或修改配置使用远程服务（如 OpenAI）`);
+        }
+        logger.debug(`本地 Embedding 服务检测通过: ${checkResult.message}`);
+      }
 
       const response = await fetch(url, {
         method: 'POST',

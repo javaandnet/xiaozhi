@@ -457,14 +457,14 @@ class UIController {
             });
         });
 
-        // Add MCP tool button
-        const addMCPToolBtn = document.getElementById('addMCPToolBtn');
-        if (addMCPToolBtn) {
-            addMCPToolBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.addMCPTool();
-            });
-        }
+        // Add MCP tool button - 功能已取消
+        // const addMCPToolBtn = document.getElementById('addMCPToolBtn');
+        // if (addMCPToolBtn) {
+        //     addMCPToolBtn.addEventListener('click', (e) => {
+        //         e.stopPropagation();
+        //         this.addMCPTool();
+        //     });
+        // }
 
         // Connect button and send button are not removed, can be added to dial button later
     }
@@ -837,32 +837,32 @@ class UIController {
         }
     }
 
-    // Add MCP tool
-    addMCPTool() {
-        const mcpToolsList = document.getElementById('mcpToolsList');
-        if (!mcpToolsList) return;
+    // Add MCP tool - 功能已取消
+    // addMCPTool() {
+    //     const mcpToolsList = document.getElementById('mcpToolsList');
+    //     if (!mcpToolsList) return;
+    //
+    //     const toolId = `mcp-tool-${Date.now()}`;
+    //     const toolDiv = document.createElement('div');
+    //     toolDiv.className = 'properties-container';
+    //     toolDiv.innerHTML = `
+    //         <div class="property-item">
+    //             <input type="text" placeholder="工具名称" value="新工具">
+    //             <input type="text" placeholder="工具描述" value="工具描述">
+    //             <button class="remove-property" onclick="uiController.removeMCPTool('${toolId}')">删除</button>
+    //         </div>
+    //     `;
+    //
+    //     mcpToolsList.appendChild(toolDiv);
+    // }
 
-        const toolId = `mcp-tool-${Date.now()}`;
-        const toolDiv = document.createElement('div');
-        toolDiv.className = 'properties-container';
-        toolDiv.innerHTML = `
-            <div class="property-item">
-                <input type="text" placeholder="工具名称" value="新工具">
-                <input type="text" placeholder="工具描述" value="工具描述">
-                <button class="remove-property" onclick="uiController.removeMCPTool('${toolId}')">删除</button>
-            </div>
-        `;
-
-        mcpToolsList.appendChild(toolDiv);
-    }
-
-    // Remove MCP tool
-    removeMCPTool(toolId) {
-        const toolElement = document.getElementById(toolId);
-        if (toolElement) {
-            toolElement.remove();
-        }
-    }
+    // Remove MCP tool - 功能已取消
+    // removeMCPTool(toolId) {
+    //     const toolElement = document.getElementById(toolId);
+    //     if (toolElement) {
+    //         toolElement.remove();
+    //     }
+    // }
 
     // Update audio statistics display
     updateAudioStats() {
